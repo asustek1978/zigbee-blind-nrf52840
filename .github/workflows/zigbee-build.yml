@@ -132,10 +132,15 @@ jobs:
               echo "::error::Unsafe default: CONFIG_${opt} enabled"
               exit 1
             fi
-            grep -qx "# CONFIG_${opt} is not set" "$cfg" || {
-              echo "::error::Unverified feature flag CONFIG_${opt}"
-              exit 1
-            }
+            # Kconfig hides options whose dependencies are disabled:
+            # absent and '# ... is not set' are both SAFE (effectively n).
+            # Only an explicitly enabled flag is unsafe for first flash.
+            if grep -q "^CONFIG_${opt}=" "$cfg"; then
+              grep -qx "CONFIG_${opt}=n" "$cfg" || {
+                echo "::error::Unexpected value for CONFIG_${opt}"
+                exit 1
+              }
+            fi
           done
           echo "SAFE DEFAULTS PASS: UART motor TX and speculative ZCL reports disabled."
 
