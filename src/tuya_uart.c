@@ -88,8 +88,8 @@ static void receive_main(void *a, void *b, void *c)
             }
         }
         if (atomic_get(&rx_dropped) > 0) {
-            LOG_WRN("P3 UART RX overflow: %d bytes discarded",
-                    atomic_set(&rx_dropped, 0));
+            LOG_WRN("P3 UART RX overflow: %ld bytes discarded",
+                    (long)atomic_set(&rx_dropped, 0));
         }
     }
 }

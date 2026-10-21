@@ -41,7 +41,7 @@ def validate(path: Path) -> None:
     print(f"PASS: {total_blocks} UF2 blocks, family 0x{FAMILY:08x}")
     print(f"Application image: 0x{minimum:08x}..0x{maximum:08x} (end exclusive)")
     print(f"Allowed: 0x{APP_START:08x}..0x{APP_END:08x}")
-    print("DIAGNOSTIC ONLY: bootloader compatibility not verified; router template")
+    print("DIAGNOSTIC ONLY: bootloader compatibility not verified; UART TX disabled")
 
 
 if __name__ == "__main__":
