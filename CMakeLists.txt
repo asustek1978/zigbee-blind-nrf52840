@@ -15,6 +15,7 @@ target_sources(app PRIVATE
   src/main.c
   src/tuya_frame.c
   src/tuya_motor.c
+  src/tuya_motor_state.c
   src/tuya_uart.c
 )
 

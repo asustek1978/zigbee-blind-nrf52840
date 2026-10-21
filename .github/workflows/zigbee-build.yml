@@ -59,6 +59,14 @@ jobs:
              app/tests/test_tuya_motor.c -o host-test/test_tuya_motor
           host-test/test_tuya_motor
 
+      - name: Test observed P3 status reports and invalid DP safety
+        run: |
+          mkdir -p host-test
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+             -Iapp/include app/src/tuya_frame.c app/src/tuya_motor_state.c \
+             app/tests/test_tuya_motor_state.c -o host-test/test_tuya_motor_state
+          host-test/test_tuya_motor_state
+
       - name: Test passive UART capture and offline decoder
         run: |
           PYTHONPATH=app/tools python3 -m unittest discover -s app/tests -p 'test_tuya_capture.py' -v
