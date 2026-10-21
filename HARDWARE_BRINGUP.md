@@ -28,6 +28,20 @@ SS24 or 1N5819 is only a candidate, subject to voltage-drop/load
 and depletion testing. Do not connect 3.306 V from P3 to RAW.
 
 ## Critical flash map unknowns
+Verified against upstream Adafruit nRF52 Bootloader **tag 0.6.0**:
+- `linker/nrf52840.ld`: bootloader starts `0xF4000`; MBR params
+  `0xFE000`; settings `0xFF000`.
+- `src/usb/uf2/uf2cfg.h`: accepted application writes are below
+  **`0xAD000`** (NOT `0xEC000`!).
+- Zephyr's UF2/S140v6 DTS uses application origin `0x26000`, confirms
+  48 KiB high bootloader, but its app size `0xC6000` is NOT a reliable
+  v0.6.0 UF2 write limit.
+
+Accordingly the branch now links firmware only within `0x26000..0xAD000`,
+reserves `0xAD000..0xEC000` as a no-write guard, preserves ZBOSS
+NVRAM at `0xEC000..0xF0000` and all bootloader pages `>=0xF4000`.
+The UF2 checker also validates Cortex-M reset and SP vectors.
+
 The device tree assumes firmware starts at 0x26000, NVRAM starts
 0xEC000 and UF2 bootloader is at 0xF4000. Physical compatibility of
 the installed HW-954 UF2 v0.6.0 / S140 v6.1.1, bootloader vectors,

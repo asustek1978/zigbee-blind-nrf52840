@@ -77,6 +77,10 @@ jobs:
         run: |
           node --check app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
 
+      - name: Test UF2 memory bounds and reset-vector safety checker
+        run: |
+          PYTHONPATH=app/tools python3 -m unittest discover -s app/tests -p 'test_uf2_layout.py' -v
+
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |
           mkdir workspace
@@ -118,6 +122,7 @@ jobs:
           set -euo pipefail
           cfg=build-nicenano/zephyr/.config
           grep '^CONFIG_ZIGBEE_ROLE_END_DEVICE=y' "$cfg"
+          grep '^CONFIG_USE_DT_CODE_PARTITION=y' "$cfg"
           for opt in P3_UART_TX_ENABLE P3_ZCL_POSITION_ENABLE P3_ZCL_BATTERY_ENABLE; do
             if grep -qx "CONFIG_${opt}=y" "$cfg"; then
               echo "::error::Unsafe default: CONFIG_${opt} enabled"
