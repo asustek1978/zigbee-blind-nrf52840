@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
+      - 'tests/**'
       - 'tools/**'
       - 'include/**'
       - 'boards/**'
@@ -41,6 +42,14 @@ jobs:
           python3 -m venv "$GITHUB_WORKSPACE/.venv"
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
           "$GITHUB_WORKSPACE/.venv/bin/pip" install -U pip west
+
+      - name: Test Tuya frame parser on host
+        run: |
+          mkdir -p host-test
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+             -Iapp/include app/src/tuya_frame.c app/tests/test_tuya_frame.c \
+             -o host-test/test_tuya_frame
+          host-test/test_tuya_frame
 
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |

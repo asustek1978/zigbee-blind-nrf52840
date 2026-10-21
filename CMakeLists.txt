@@ -13,6 +13,8 @@ project("Zigbee application template")
 # NORDIC SDK APP START
 target_sources(app PRIVATE
   src/main.c
+  src/tuya_frame.c
+  src/tuya_uart.c
 )
 
 target_include_directories(app PRIVATE include)
