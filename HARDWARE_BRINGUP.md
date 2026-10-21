@@ -37,13 +37,29 @@ Verified against upstream Adafruit nRF52 Bootloader **tag 0.6.0**:
   48 KiB high bootloader, but its app size `0xC6000` is NOT a reliable
   v0.6.0 UF2 write limit.
 
-Accordingly the branch now links firmware only within `0x26000..0xAD000`,
-reserves `0xAD000..0xEC000` as a no-write guard, preserves ZBOSS
-NVRAM at `0xEC000..0xF0000` and all bootloader pages `>=0xF4000`.
-The UF2 checker also validates Cortex-M reset and SP vectors.
+Accordingly this branch now limits application code to `0x26000..0xAD000` and
+reserves a no-code guard `0xAD000..0xED000`. The **actual 0.6.0 DFU
+reserved application-data region** is 7 flash pages, `0xED000..0xF4000`:
 
-The device tree assumes firmware starts at 0x26000, NVRAM starts
-0xEC000 and UF2 bootloader is at 0xF4000. Physical compatibility of
+| Region | Address interval | Size |
+|---|---|---|
+| Application | 0x26000..0xAD000 | 540 KiB |
+| Firmware no-write guard | 0xAD000..0xED000 | 256 KiB |
+| ZBOSS NV | 0xED000..0xF1000 | 16 KiB |
+| Zigbee production config | 0xF1000..0xF2000 | 4 KiB |
+| Zephyr settings | 0xF2000..0xF4000 | 8 KiB |
+| Bootloader + settings | 0xF4000..0x100000 | 48 KiB |
+
+This preserves all 28 KiB of persistent storage inside the region
+reserved by the original bootloader across application updates.
+The ZBOSS NV area is 16 KiB, **smaller than Nordic's reference 32 KiB**;
+with the default two logical pages its page size is 8 KiB, aligned to
+4 KiB physical flash pages. End Device durability and commissioning
+must still be verified; consider extra NVRAM space only alongside a
+bootloader/DFU data-preservation plan.
+
+The UF2 checker also validates Cortex-M stack and reset vectors.
+Physical compatibility of Physical compatibility of
 the installed HW-954 UF2 v0.6.0 / S140 v6.1.1, bootloader vectors,
 flash protection and ZBOSS NV settings is NOT established.
 Passing the UF2 layout validator is not proof of compatibility.
