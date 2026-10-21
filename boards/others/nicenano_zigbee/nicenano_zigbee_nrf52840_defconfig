@@ -1,4 +1,6 @@
 CONFIG_GPIO=y
 CONFIG_SERIAL=y
 CONFIG_USE_DT_CODE_PARTITION=y
-CONFIG_BUILD_OUTPUT_UF2=y
+# UF2 is generated from the absolute-address zephyr.hex in CI.
+# Zephyr mapped-partition builds do not expose CONFIG_FLASH_LOAD_OFFSET to uf2conv.py.
+CONFIG_BUILD_OUTPUT_UF2=n
