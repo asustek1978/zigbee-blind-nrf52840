@@ -110,6 +110,24 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
+      - name: Enforce safe motor defaults in diagnostic firmware
+        if: steps.build.outcome == 'success'
+        run: |
+          set -euo pipefail
+          cfg=build-nicenano/zephyr/.config
+          grep '^CONFIG_ZIGBEE_ROLE_END_DEVICE=y' "$cfg"
+          for opt in P3_UART_TX_ENABLE P3_ZCL_POSITION_ENABLE P3_ZCL_BATTERY_ENABLE; do
+            if grep -qx "CONFIG_${opt}=y" "$cfg"; then
+              echo "::error::Unsafe default: CONFIG_${opt} enabled"
+              exit 1
+            fi
+            grep -qx "# CONFIG_${opt} is not set" "$cfg" || {
+              echo "::error::Unverified feature flag CONFIG_${opt}"
+              exit 1
+            }
+          done
+          echo "SAFE DEFAULTS PASS: UART motor TX and speculative ZCL reports disabled."
+
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
         run: |
