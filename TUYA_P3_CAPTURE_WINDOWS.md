@@ -77,7 +77,7 @@ After capture, offline decode and inspect:
 
 ```powershell
 py tools/tuya_capture.py decode --file tuya_p3_capture.jsonl
-py tools/tuya_capture.py decode --hex "55 AA 02 00 01 04 00 05 01 04 00 01 00 0C"
+py tools/tuya_capture.py decode --hex "55 AA 02 00 01 04 00 05 01 04 00 01 00 11"
 ```
 
 Last line is illustrative only; use actual captured data for conclusions.
