@@ -68,10 +68,25 @@ static void test_zigbee_report(void)
     assert(out.sequence == 0x1234 && out.length == 8 && out.command == 6);
     assert(tuya_foreach_report_dp(&out, read_dp, NULL));
     assert(dp_calls == 1 && last_id == 3 && last_value == 82);
-    input.command = 0x2c;
+    /* Tuya Zigbee DP commands in both directions, not just reports. */
+    const uint8_t commands[] = {0x04, 0x05, 0x27, 0x2a, 0x2c};
+    for (size_t i = 0; i < sizeof(commands); ++i) {
+        input.command = commands[i];
+        n = tuya_encode(&input, raw, sizeof(raw));
+        dp_calls = 0;
+        assert(feed(&parser, raw, n, &out));
+        assert(tuya_foreach_report_dp(&out, read_dp, NULL));
+        assert(dp_calls == 1 && last_id == 3 && last_value == 82);
+    }
+    /* Classic 0x06 is also a DP command, not only 0x07. */
+    input.format = TUYA_WIRE_CLASSIC;
+    input.version = 0;
+    input.command = 0x06;
+    dp_calls = 0;
     n = tuya_encode(&input, raw, sizeof(raw));
     assert(feed(&parser, raw, n, &out));
     assert(tuya_foreach_report_dp(&out, read_dp, NULL));
+    assert(dp_calls == 1);
 }
 
 static void test_recovery_and_corruption(void)
@@ -103,10 +118,12 @@ static void test_no_partial_dp_callbacks(void)
     dp_calls = 0;
     assert(!tuya_foreach_report_dp(&frame, read_dp, NULL));
     assert(dp_calls == 0);
-    frame.command = 6;
+    frame.command = 0x01;  /* Non-DP protocol command. */
     assert(!tuya_foreach_report_dp(&frame, read_dp, NULL));
     frame.format = TUYA_WIRE_ZIGBEE;
+    frame.command = 0x04;  /* DP, but second value truncated. */
     assert(!tuya_foreach_report_dp(&frame, read_dp, NULL));
+    assert(dp_calls == 0);
 }
 
 static void test_encode_limits(void)

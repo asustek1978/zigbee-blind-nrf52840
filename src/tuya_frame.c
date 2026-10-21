@@ -104,9 +104,17 @@ bool tuya_parser_feed(struct tuya_parser *parser, uint8_t byte,
 static bool is_dp_report(const struct tuya_frame *frame)
 {
     if (frame->format == TUYA_WIRE_ZIGBEE) {
-        return frame->command == 0x06U || frame->command == 0x2cU;
+        /* Tuya Zigbee UART v0x02 DP commands, both directions.
+         * 0x04: module->MCU set; 0x05: MCU response;
+         * 0x06/0x2c: MCU reports; 0x2a: group; 0x27: advertising.
+         * Acknowledgment frames of length 0/1 are not DP structures.
+         */
+        return frame->command == 0x04U || frame->command == 0x05U ||
+               frame->command == 0x06U || frame->command == 0x27U ||
+               frame->command == 0x2aU || frame->command == 0x2cU;
     }
-    return frame->command == 0x07U;
+    /* Classic Tuya UART: 0x06 set and 0x07 MCU DP report. */
+    return frame->command == 0x06U || frame->command == 0x07U;
 }
 
 bool tuya_foreach_report_dp(const struct tuya_frame *frame,

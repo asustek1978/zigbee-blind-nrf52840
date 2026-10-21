@@ -38,3 +38,7 @@ requires a future RTT or comparable debug backend to observe actual frames.
 5. Verify physical flash map/S140/UF2 bootloader before flashing.
 
 This is a **compile/test prototype**, not a hardware-validated binary.
+
+## Passive capture utility
+
+See [TUYA_P3_CAPTURE_WINDOWS.md](TUYA_P3_CAPTURE_WINDOWS.md). The host decoder supports all documented DP-carrying command IDs; no UART TX is added.
