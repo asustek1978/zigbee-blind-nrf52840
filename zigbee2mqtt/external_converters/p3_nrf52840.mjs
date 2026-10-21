@@ -53,7 +53,13 @@ const p3DiagnosticsRefresh = {
         if (value !== 'refresh') {
             throw new Error('P3-NRF52840: only p3_diagnostics_refresh=refresh is supported');
         }
-        await entity.read('genBasic', Object.values(diagnosticAttrs));
+        // ZBOSS cannot fit 13 custom Basic attributes in one Read Response:
+        // it returned INSUFFICIENT_SPACE for 0xF10C after the first 12.
+        // Read eight and five attributes separately, preserving the same
+        // p3_diagnostics_refresh MQTT API. Neither request sends motor UART.
+        const ids = Object.values(diagnosticAttrs);
+        await entity.read('genBasic', ids.slice(0, 8));
+        await entity.read('genBasic', ids.slice(8));
     },
 };
 
