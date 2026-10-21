@@ -3,7 +3,7 @@ name: Zigbee nRF52840 Linux build
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feature/window-covering-end-device]
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
