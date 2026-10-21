@@ -13,6 +13,17 @@ config P3_UART_TX_ENABLE
       safe end-stop behavior on the real P3 installation.
       Disabled by default even when the host tests succeed.
 
+config P3_MCU_INIT_ENABLE
+    bool "Send captured WBR3 wake initialization (no motor motion)"
+    depends on P3_UART_TX_ENABLE
+    default n
+    help
+      Replays verified startup request opcodes after UART RX initialization:
+      0x00 heartbeat, 0x01 product, 0x02 mode, 0x08 DP query.
+      This does NOT send any motor movement or legacy Wi-Fi state.
+      Repeated heartbeat intervals were not measured, so periodic polling
+      is NOT implemented. Hardware startup reliability still untested.
+
 config P3_ZCL_POSITION_ENABLE
     bool "Expose DP3 as current lift percentage (physical polarity to verify)"
     default n

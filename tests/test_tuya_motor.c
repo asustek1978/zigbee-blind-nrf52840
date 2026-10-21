@@ -111,8 +111,54 @@ static void test_real_mcu_reports(void)
     verify_report(dp13_40_capture, sizeof(dp13_40_capture), 13U, 40U);
 }
 
+
+static void test_captured_wbr3_startup(void)
+{
+    /* Real motor wake sequence Oct 19. Check exact classic UART bytes. */
+    const uint8_t heartbeat[] = {0x55,0xaa,0,0,0,0,0xff};
+    const uint8_t product[] =   {0x55,0xaa,0,1,0,0,0x00};
+    const uint8_t mode[] =      {0x55,0xaa,0,2,0,0,0x01};
+    const uint8_t query[] =     {0x55,0xaa,0,8,0,0,0x07};
+    const uint8_t status03[] =  {0x55,0xaa,0,3,0,1,3,0x06};
+    const uint8_t status04[] =  {0x55,0xaa,0,3,0,1,4,0x07};
+    uint8_t out[32];
+
+    assert(tuya_motor_encode_request(TUYA_MOTOR_HEARTBEAT, out, sizeof(out)) == 7U);
+    assert(memcmp(out, heartbeat, sizeof(heartbeat)) == 0);
+    assert(tuya_motor_encode_request(TUYA_MOTOR_PRODUCT_QUERY, out, sizeof(out)) == 7U);
+    assert(memcmp(out, product, sizeof(product)) == 0);
+    assert(tuya_motor_encode_request(TUYA_MOTOR_WORK_MODE_QUERY, out, sizeof(out)) == 7U);
+    assert(memcmp(out, mode, sizeof(mode)) == 0);
+    assert(tuya_motor_encode_request(TUYA_MOTOR_STATE_QUERY, out, sizeof(out)) == 7U);
+    assert(memcmp(out, query, sizeof(query)) == 0);
+    assert(tuya_motor_encode_legacy_network_status(3U, out, sizeof(out)) == 8U);
+    assert(memcmp(out, status03, sizeof(status03)) == 0);
+    assert(tuya_motor_encode_legacy_network_status(4U, out, sizeof(out)) == 8U);
+    assert(memcmp(out, status04, sizeof(status04)) == 0);
+
+    assert(tuya_motor_encode_request((enum tuya_motor_request)0x07, out, sizeof(out)) == 0);
+    assert(tuya_motor_encode_request(TUYA_MOTOR_HEARTBEAT, out, 6) == 0);
+    assert(tuya_motor_encode_legacy_network_status(5, out, sizeof(out)) == 0);
+
+    /* Captured MCU heartbeat reply, without mistaking it for movement DP. */
+    const uint8_t reply[] = {0x55,0xaa,0x03,0,0,1,0,0x03};
+    struct tuya_parser parser;
+    struct tuya_frame decoded;
+    bool received = false;
+    tuya_parser_init(&parser);
+    for (size_t i=0; i<sizeof(reply); ++i) {
+        if (tuya_parser_feed(&parser, reply[i], &decoded)) {
+            received = true;
+        }
+    }
+    assert(received);
+    assert(decoded.version == 3U && decoded.command == 0U);
+    assert(decoded.length == 1U && decoded.data[0] == 0U);
+}
+
 int main(void)
 {
+    test_captured_wbr3_startup();
     test_motor_commands();
     test_invalid_control_and_bounds();
     test_real_mcu_reports();

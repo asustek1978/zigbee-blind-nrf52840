@@ -24,6 +24,7 @@ Device-specific power/position behavior is controlled by application Kconfig:
 | Option | Default | Effect |
 |---|---|---|
 | `CONFIG_P3_UART_TX_ENABLE` | **n** | Physically send verified UART commands on P0.20 |
+| `CONFIG_P3_MCU_INIT_ENABLE` | **n** | Replay observed non-movement heartbeat/product/mode/DP query once at boot when TX is enabled |
 | `CONFIG_P3_ZCL_POSITION_ENABLE` | **n** | DP3 -> ZCL lift percentage, allow position targeting |
 | `CONFIG_P3_ZCL_POSITION_INVERT` | **n** | Convert DP3 and ZCL target with 100-value when polarity is reversed |
 | `CONFIG_P3_ZCL_BATTERY_ENABLE` | **n** | DP13 (0-100) -> ZCL BatteryPercentageRemaining (0-200) |
@@ -55,7 +56,7 @@ not for loading into the device.
 
 ## Regression tests
 
-CI always runs pure host C command-capture and DP-state tests, a passive
+CI additionally checks Zigbee2MQTT converter syntax using Node.js. CI always runs pure host C command-capture and DP-state tests, a passive
 Python UART decoder test, the **default safe firmware build** with bounds
 check, and a **separate bench-only enabled firmware compilation**. Only the
 SAFE configuration files are archived, not executable firmware UF2 binaries.

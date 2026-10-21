@@ -59,3 +59,29 @@ handling are validated. Data are currently diagnostic only.
 - Later, field-test with safety limits and reconnect behavior.
 
 Do **not** flash this diagnostic image based solely on CI success.
+
+
+## Observed WBR3 startup after waking P3
+
+The user captured the original WBR3 startup request sequence on October 19:
+`55 AA 00 00 00 00 FF` (heartbeat), `55 AA 00 01 00 00 00`
+(product information), `55 AA 00 02 00 00 01` (mode), and
+`55 AA 00 08 00 00 07` (DP state query). Original WBR3 also sent
+`55 AA 00 03 00 01 03 06` and `55 AA 00 03 00 01 04 07`
+legacy Wi-Fi statuses. Motor's MCU replied to heartbeat with
+`55 AA 03 00 00 01 00 03` and to product-info query with a
+JSON payload containing product ID `edfol3hy9ljq9ccv` and version `1.0.0`.
+
+`src/tuya_motor.c` now encodes these exact frames and
+`tests/test_tuya_motor.c` regression-tests them byte-for-byte.
+
+The four safe, non-movement startup requests can be queued once at UART
+initialization **only with `CONFIG_P3_MCU_INIT_ENABLE=y` and
+`CONFIG_P3_UART_TX_ENABLE=y`**. Both are disabled by default.
+Legacy Wi-Fi status 03/04 encoders are available **only for tests** and
+never sent automatically (Zigbee join is not a Wi-Fi cloud connection).
+
+Four repeated heartbeats were observed but their interval was not measured.
+Therefore the firmware does NOT invent a periodic heartbeat schedule.
+The actual MCU wake/response and whether additional handshakes are required
+remain hardware test items.

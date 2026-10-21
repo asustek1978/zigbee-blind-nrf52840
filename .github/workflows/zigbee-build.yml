@@ -71,6 +71,10 @@ jobs:
         run: |
           PYTHONPATH=app/tools python3 -m unittest discover -s app/tests -p 'test_tuya_capture.py' -v
 
+      - name: Check Zigbee2MQTT external converter syntax
+        run: |
+          node --check app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
+
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |
           mkdir workspace

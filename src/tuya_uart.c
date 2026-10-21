@@ -21,7 +21,7 @@ LOG_MODULE_REGISTER(tuya_p3, LOG_LEVEL_INF);
 BUILD_ASSERT(DT_NODE_EXISTS(MOTOR_UART_NODE), "motor-uart alias required");
 
 #define P3_TX_FRAME_CAP 32U
-#define P3_TX_QUEUE_DEPTH 2U
+#define P3_TX_QUEUE_DEPTH 8U
 
 static const struct device *const motor_uart = DEVICE_DT_GET(MOTOR_UART_NODE);
 
@@ -99,6 +99,37 @@ bool tuya_uart_submit_position(uint8_t percent)
     return queue_motor_frame(encoded, count, false);
 }
 
+
+/* A WBR3 capture after physically waking the battery motor showed
+ * heartbeat, product query, work-mode query, then DP status query.
+ * No periodic heartbeat interval was established in that capture.
+ * Startup transmission is a SEPARATE opt-in feature, disabled by default.
+ * This never sends a motor movement command.
+ */
+static void enqueue_captured_startup(void)
+{
+    const enum tuya_motor_request requests[] = {
+        TUYA_MOTOR_HEARTBEAT,
+        TUYA_MOTOR_PRODUCT_QUERY,
+        TUYA_MOTOR_WORK_MODE_QUERY,
+        TUYA_MOTOR_STATE_QUERY
+    };
+    uint8_t bytes[P3_TX_FRAME_CAP];
+
+    if (!IS_ENABLED(CONFIG_P3_MCU_INIT_ENABLE)) {
+        return;
+    }
+
+    for (size_t i = 0; i < ARRAY_SIZE(requests); ++i) {
+        size_t count = tuya_motor_encode_request(requests[i], bytes, sizeof(bytes));
+        if (!queue_motor_frame(bytes, count, false)) {
+            LOG_WRN("P3 startup request 0x%02x could not be queued", requests[i]);
+            return;
+        }
+    }
+    LOG_INF("P3 captured startup sequence queued (no movement)");
+}
+
 static void motor_uart_isr(const struct device *device, void *user_data)
 {
     uint8_t data[32];
@@ -160,6 +191,7 @@ static void receive_main(void *a, void *b, void *c)
     }
     uart_irq_rx_enable(motor_uart);
     atomic_set(&uart_ready, 1);
+    enqueue_captured_startup();
     LOG_INF("Tuya P3 9600 RX active; motor TX %s",
             IS_ENABLED(CONFIG_P3_UART_TX_ENABLE) ? "enabled (prototype)" : "DISABLED");
 

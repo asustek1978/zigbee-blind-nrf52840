@@ -54,3 +54,40 @@ size_t tuya_motor_encode_position(uint8_t percent,
     packet.data[7] = percent;
     return tuya_encode(&packet, out, capacity);
 }
+
+size_t tuya_motor_encode_request(enum tuya_motor_request request,
+                                 uint8_t *out, size_t capacity)
+{
+    struct tuya_frame packet = {0};
+
+    if (!out || (request != TUYA_MOTOR_HEARTBEAT &&
+                 request != TUYA_MOTOR_PRODUCT_QUERY &&
+                 request != TUYA_MOTOR_WORK_MODE_QUERY &&
+                 request != TUYA_MOTOR_STATE_QUERY)) {
+        return 0U;
+    }
+
+    packet.format = TUYA_WIRE_CLASSIC;
+    packet.version = 0;
+    packet.command = (uint8_t)request;
+    packet.length = 0;
+    return tuya_encode(&packet, out, capacity);
+}
+
+size_t tuya_motor_encode_legacy_network_status(uint8_t status,
+                                               uint8_t *out, size_t capacity)
+{
+    struct tuya_frame packet = {0};
+
+    /* Only the two values captured from original WBR3 are supported. */
+    if (!out || (status != 3U && status != 4U)) {
+        return 0U;
+    }
+
+    packet.format = TUYA_WIRE_CLASSIC;
+    packet.version = 0;
+    packet.command = 0x03U;
+    packet.length = 1U;
+    packet.data[0] = status;
+    return tuya_encode(&packet, out, capacity);
+}
