@@ -77,12 +77,18 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Validate UF2 target flash ranges
+      - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
         run: |
+          set -euo pipefail
           mkdir -p diagnostic
-          python3 app/tools/check_uf2_layout.py build-nicenano/zephyr/zephyr.uf2 |
-            tee diagnostic/uf2_report.txt
+          test -s build-nicenano/zephyr/zephyr.hex
+          python3 workspace/zephyr/scripts/build/uf2conv.py \
+            -c -f 0xada52840 \
+            -o build-nicenano/zephyr/zephyr.uf2 \
+            build-nicenano/zephyr/zephyr.hex
+          python3 app/tools/check_uf2_layout.py \
+            build-nicenano/zephyr/zephyr.uf2 | tee diagnostic/uf2_report.txt
 
       - name: Save diagnostic configuration
         if: always()
