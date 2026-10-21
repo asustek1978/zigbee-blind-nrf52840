@@ -1,0 +1,5 @@
+build/
+build_*/
+*.bak
+*.bak2
+__pycache__/

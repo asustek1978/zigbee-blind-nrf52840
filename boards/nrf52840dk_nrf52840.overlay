@@ -1,0 +1,17 @@
+/*
+ * Copyright (c) 2025 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+ */
+
+#include <nrf52840_partitions.dtsi>
+
+/ {
+	chosen {
+		ncs,zigbee-timer = &timer2;
+	};
+};
+
+&timer2 {
+	status = "okay";
+};

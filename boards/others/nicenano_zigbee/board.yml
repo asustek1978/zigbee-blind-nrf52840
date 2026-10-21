@@ -1,0 +1,6 @@
+board:
+  name: nicenano_zigbee
+  full_name: nice!nano nRF52840 Zigbee prototype
+  vendor: others
+  socs:
+    - name: nrf52840
