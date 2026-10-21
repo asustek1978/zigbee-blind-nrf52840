@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
+      - 'tools/**'
       - 'include/**'
       - 'boards/**'
       - 'prj.conf'
@@ -75,6 +76,13 @@ jobs:
             "$GITHUB_WORKSPACE/app" -- \
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+
+      - name: Validate UF2 target flash ranges
+        if: steps.build.outcome == 'success'
+        run: |
+          mkdir -p diagnostic
+          python3 app/tools/check_uf2_layout.py build-nicenano/zephyr/zephyr.uf2 |
+            tee diagnostic/uf2_report.txt
 
       - name: Save diagnostic configuration
         if: always()
