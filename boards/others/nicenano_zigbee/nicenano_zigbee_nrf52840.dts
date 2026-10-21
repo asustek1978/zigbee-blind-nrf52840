@@ -1,5 +1,6 @@
 /dts-v1/;
 #include <nordic/nrf52840_qiaa.dtsi>
+#include <zephyr/dt-bindings/gpio/gpio.h>
 #include "nicenano_zigbee_nrf52840-pinctrl.dtsi"
 
 / {
@@ -16,18 +17,35 @@
 
     aliases {
         motor-uart = &uart0;
+        status-led = &p3_status_led;
+    };
+
+    leds {
+        compatible = "gpio-leds";
+        /* nice!nano-compatible blue status LED, active-low on P0.15.
+         * This is NOT the hardwired battery-charge indicator.
+         */
+        p3_status_led: status_led_0 {
+            gpios = <&gpio0 15 GPIO_ACTIVE_LOW>;
+            label = "HW-954 Blue Zigbee Status";
+        };
     };
 };
 
 /*
  * DIAGNOSTIC FLASH LAYOUT ONLY — NOT VERIFIED AGAINST OUR UF2 BOOTLOADER.
- * Derived from the nice!nano v2 partition example:
+ * Lower and upper bounds checked against Adafruit Bootloader 0.6.0:
+ *   src/usb/uf2/uf2cfg.h USER_FLASH_END=0xAD000
+ *   linker/nrf52840.ld bootloader start=0xF4000
+ * Actual HW-954 ROM/UICR contents and vector handoff remain unverified.
  *
  *   0x00000-0x25fff  Existing S140 / reserved region
- *   0x26000-0xebfff  Application
- *   0xec000-0xeffff  ZBOSS NVRAM (16 KiB)
- *   0xf0000-0xf0fff  ZBOSS production config
- *   0xf1000-0xf3fff  Reserved storage
+ *   0x26000-0xacfff  UF2-writeable application (Adafruit 0.6.0)
+ *   0xad000-0xecfff  UF2 application guard (no firmware writes)
+ *   0xed000-0xf3fff  7 preserved pages (28 KiB) in v0.6.0 DFU
+ *   0xed000-0xf0fff  ZBOSS NVRAM (16 KiB)
+ *   0xf1000-0xf1fff  ZBOSS production config
+ *   0xf2000-0xf3fff  Zephyr settings storage (8 KiB)
  *   0xf4000-0xfffff  UF2 bootloader / reserved region
  *
  * Do not flash firmware built with this layout until the physical
@@ -48,25 +66,37 @@
         slot0_partition: partition@26000 {
             compatible = "zephyr,mapped-partition";
             label = "image-0";
-            reg = <0x00026000 0x000c6000>;
+            reg = <0x00026000 0x00087000>;
         };
 
-        zboss_nvram: partition@ec000 {
+        /* Adafruit bootloader 0.6.0 explicitly limits APP writes to
+         * target addresses strictly below 0xAD000 (uf2cfg.h).
+         * DFU_APP_DATA_RESERVED=7*4096 protects 0xED000..0xF4000.
+         * Do NOT let a linked firmware grow into this reserved gap.
+         */
+        uf2_app_guard: partition@ad000 {
+            compatible = "zephyr,mapped-partition";
+            label = "reserved-uf2-app-guard";
+            read-only;
+            reg = <0x000ad000 0x00040000>;
+        };
+
+        zboss_nvram: partition@ed000 {
             compatible = "zephyr,mapped-partition";
             label = "zboss-nvram";
-            reg = <0x000ec000 0x00004000>;
+            reg = <0x000ed000 0x00004000>;
         };
 
-        zboss_product_config: partition@f0000 {
+        zboss_product_config: partition@f1000 {
             compatible = "zephyr,mapped-partition";
             label = "zboss-product-config";
-            reg = <0x000f0000 0x00001000>;
+            reg = <0x000f1000 0x00001000>;
         };
 
-        storage_partition: partition@f1000 {
+        storage_partition: partition@f2000 {
             compatible = "zephyr,mapped-partition";
             label = "storage";
-            reg = <0x000f1000 0x00003000>;
+            reg = <0x000f2000 0x00002000>;
         };
 
         uf2_bootloader_partition: partition@f4000 {

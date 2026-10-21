@@ -3,13 +3,16 @@ name: Zigbee nRF52840 Linux build
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feature/window-covering-end-device]
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
+      - 'tests/**'
       - 'tools/**'
       - 'include/**'
       - 'boards/**'
+      - 'Kconfig'
+      - 'zigbee2mqtt/**'
       - 'prj.conf'
       - 'CMakeLists.txt'
       - 'Kconfig.sysbuild'
@@ -41,6 +44,46 @@ jobs:
           python3 -m venv "$GITHUB_WORKSPACE/.venv"
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
           "$GITHUB_WORKSPACE/.venv/bin/pip" install -U pip west
+
+      - name: Test Tuya frame parser on host
+        run: |
+          mkdir -p host-test
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+             -Iapp/include app/src/tuya_frame.c app/tests/test_tuya_frame.c \
+             -o host-test/test_tuya_frame
+          host-test/test_tuya_frame
+
+      - name: Verify previously captured P3 motor command bytes
+        run: |
+          mkdir -p host-test
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+             -Iapp/include app/src/tuya_frame.c app/src/tuya_motor.c \
+             app/tests/test_tuya_motor.c -o host-test/test_tuya_motor
+          host-test/test_tuya_motor
+
+      - name: Test observed P3 status reports and invalid DP safety
+        run: |
+          mkdir -p host-test
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+             -Iapp/include app/src/tuya_frame.c app/src/tuya_motor_state.c \
+             app/tests/test_tuya_motor_state.c -o host-test/test_tuya_motor_state
+          host-test/test_tuya_motor_state
+
+      - name: Test passive UART capture and offline decoder
+        run: |
+          PYTHONPATH=app/tools python3 -m unittest discover -s app/tests -p 'test_tuya_capture.py' -v
+
+      - name: Check Zigbee2MQTT external converter syntax
+        run: |
+          node --check app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
+
+      - name: Test UF2 memory bounds and reset-vector safety checker
+        run: |
+          PYTHONPATH=app/tools python3 -m unittest discover -s app/tests -p 'test_uf2_layout.py' -v
+
+      - name: Check HW-954 source Flash partition contract
+        run: |
+          python3 app/tools/check_board_flash_map.py             app/boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts
 
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |
@@ -77,6 +120,31 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
+      - name: Enforce build 31 diagnostic TX-only profile and blocked movement
+        if: steps.build.outcome == 'success'
+        run: |
+          set -euo pipefail
+          cfg=build-nicenano/zephyr/.config
+          grep '^CONFIG_ZIGBEE_ROLE_END_DEVICE=y' "$cfg"
+          grep '^CONFIG_USE_DT_CODE_PARTITION=y' "$cfg"
+          for opt in P3_UART_TX_ENABLE P3_MCU_INIT_ENABLE P3_ZCL_POSITION_ENABLE P3_ZCL_POSITION_INVERT P3_ZCL_BATTERY_ENABLE; do
+            if grep -qx "CONFIG_${opt}=y" "$cfg"; then
+              echo "::error::Unsafe default: CONFIG_${opt} enabled"
+              exit 1
+            fi
+            # Kconfig hides options whose dependencies are disabled:
+            # absent and '# ... is not set' are both SAFE (effectively n).
+            # Only an explicitly enabled flag is unsafe for first flash.
+            if grep -q "^CONFIG_${opt}=" "$cfg"; then
+              grep -qx "CONFIG_${opt}=n" "$cfg" || {
+                echo "::error::Unexpected value for CONFIG_${opt}"
+                exit 1
+              }
+            fi
+          done
+          grep -qx '^CONFIG_P3_DIAG_STARTUP_QUERIES=y' "$cfg"
+          echo "BUILD 31 PASS: only 4 allowlisted non-movement UART requests; cover TX blocked."
+
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
         run: |
@@ -89,6 +157,22 @@ jobs:
             build-nicenano/zephyr/zephyr.hex
           python3 app/tools/check_uf2_layout.py \
             build-nicenano/zephyr/zephyr.uf2 | tee diagnostic/uf2_report.txt
+
+      - name: Compile enabled motor/Zigbee feedback variant (not flash-ready)
+        if: steps.build.outcome == 'success'
+        working-directory: workspace
+        run: |
+          set -euo pipefail
+          west build -b nicenano_zigbee/nrf52840 \
+            -d "$GITHUB_WORKSPACE/build-nicenano-bench" \
+            --pristine=always --no-sysbuild \
+            "$GITHUB_WORKSPACE/app" -- \
+            "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
+            "-DEXTRA_CONF_FILE=$GITHUB_WORKSPACE/app/tests/p3_bench_features.conf"
+          grep '^CONFIG_P3_UART_TX_ENABLE=y' "$GITHUB_WORKSPACE/build-nicenano-bench/zephyr/.config"
+          grep '^CONFIG_P3_ZCL_POSITION_ENABLE=y' "$GITHUB_WORKSPACE/build-nicenano-bench/zephyr/.config"
+          grep '^CONFIG_P3_ZCL_BATTERY_ENABLE=y' "$GITHUB_WORKSPACE/build-nicenano-bench/zephyr/.config"
+          echo "BENCH CONFIG COMPILED ONLY; no flashable artifact uploaded."
 
       - name: Save diagnostic configuration
         if: always()
@@ -110,6 +194,59 @@ jobs:
           name: zigbee-build-diagnostics
           path: diagnostic/
           if-no-files-found: warn
+
+      - name: Package HW-954 one-time UART startup diagnostic UF2
+        if: success() && steps.build.outcome == 'success'
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-build31.uf2
+          cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
+          cp build-nicenano/zephyr/.config release/zephyr.config
+          git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
+          (
+            cd release
+            sha256sum P3-NRF52840-build31.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-build31.uf2
+          )
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-build31.uf2
+          cat > release/READ_ME_FIRST.txt <<'EOF'
+          P3-NRF52840-build31.uf2 — EXPERIMENTAL ONE-TIME P3 UART TX BENCH BUILD
+
+          Target: HW-954 nRF52840 nice!nano-compatible clone,
+          UF2 Bootloader 0.6.0, SoftDevice S140 v6.1.1.
+          Zigbee: Sleepy End Device, Window Covering cluster 0x0102, endpoint 10.
+
+          THIS FILE IS NOT THE BOOTLOADER. It contains application bytes only.
+          MOTOR MOVEMENT is DISABLED. This image nevertheless PHYSICALLY
+          TRANSMITS four captured NON-MOVEMENT Tuya P3 UART requests once
+          after RX initialization: heartbeat 0x00, product 0x01,
+          work mode 0x02, DP state query 0x08. No retries, motion
+          commands, position targets or Zigbee-triggered motor TX.
+          Speculative ZCL position and battery mapping remain disabled.
+          The fourth service request sequence is NOT electrically isolated.
+
+          WARNING: Compiled and statically validated, but NOT yet boot-tested
+          on the physical HW-954 clone. Do not connect motor or P3 battery
+          during USB flashing. Before connecting UART TX P0.20 to P3 TX,
+          physically verify power isolation and nonconflicting 3.3V levels,
+          with common signal GND. DO NOT flash while the P3 motor circuit
+          and USB/battery power are connected. Service commands are NOT
+          proven motion-free on every P3 firmware variant.
+
+          Check SHA256SUMS.txt. Reset into UF2 mode before copying the .uf2.
+          If the new application fails, the original UF2 loader may still
+          be reachable by double-reset; SWD recovery is the reliable fallback.
+          EOF
+
+      - name: Upload build 31 startup diagnostic UF2
+        if: success() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: P3-NRF52840-build31-startup-UF2
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Report build status
         if: steps.build.outcome == 'failure'

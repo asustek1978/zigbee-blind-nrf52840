@@ -1,0 +1,140 @@
+# P3 nRF52840 Zigbee2MQTT integration (prototype)
+
+This firmware advertises **model** `P3-NRF52840` and **manufacturer**
+`LocalDIY` in the Zigbee Basic cluster, endpoint **10**.
+
+The endpoint exposes server clusters:
+- Basic `0x0000`, Identify `0x0003`, Groups `0x0004`, Scenes `0x0005`
+- Window Covering `0x0102` (lift-only, HA device ID `0x0202`)
+- Power Configuration `0x0001` (BatteryVoltage unknown `0xFF`,
+  BatteryPercentageRemaining unknown `0xFF` until real status is enabled)
+
+## Zigbee2MQTT converter
+
+When the board is finally safe to flash and can join a network, copy
+[zigbee2mqtt/external_converters/p3_nrf52840.mjs](zigbee2mqtt/external_converters/p3_nrf52840.mjs)
+into Zigbee2MQTT's external converter directory and load it through the
+Zigbee2MQTT interface / external converter configuration appropriate to the
+installed release. The converter uses standard `fz.cover_position_tilt`,
+`fz.battery`, `tz.cover_state`, `tz.cover_position_tilt` and endpoint 10.
+It configures reporting for position and half-percent battery.
+
+Device-specific power/position behavior is controlled by application Kconfig:
+
+| Option | Default | Effect |
+|---|---|---|
+| `CONFIG_P3_UART_TX_ENABLE` | **n** | Physically send verified UART commands on P0.20 |
+| `CONFIG_P3_MCU_INIT_ENABLE` | **n** | Replay observed non-movement heartbeat/product/mode/DP query once at boot when TX is enabled |
+| `CONFIG_P3_ZCL_POSITION_ENABLE` | **n** | DP3 -> ZCL lift percentage, allow position targeting |
+| `CONFIG_P3_ZCL_POSITION_INVERT` | **n** | Convert DP3 and ZCL target with 100-value when polarity is reversed |
+| `CONFIG_P3_ZCL_BATTERY_ENABLE` | **n** | DP13 (0-100) -> ZCL BatteryPercentageRemaining (0-200) |
+
+Default firmware ALWAYS rejects Open/Close/Stop/Go To Position Zigbee commands;
+this is deliberate so **no unintended motor movement** can occur on power-up.
+The reported current position and battery start as **unknown**.
+
+After hardware qualification only, use a dedicated overlay for enabled features;
+do not edit production defaults blindly. `tests/p3_bench_features.conf` exists
+**only for CI compilation** of branches through the full enabled code paths,
+not for loading into the device.
+
+## Validation that remains required
+
+1. Prove nice!nano **HW-954 / UF2 0.6.0 / S140 6.1.1** bootloader and flash map
+   match the compiled Zigbee application. The current `0x26000` app partition
+   and `0xf4000` bootloader range are **provisional**.
+2. Verify original P3 UART TX/RX electrical levels and independent battery
+   feeding. Do not USB-power/program nice!nano while connected to the P3
+   battery charging circuit until isolation is validated.
+3. Verify actual Zigbee join/interview, receive report timing, battery drain,
+   Zigbee2MQTT commands and reporting.
+4. Confirm lift endpoint orientation (0=open, 100=closed), and check DP13
+   across different charge levels. No invented voltage report is included.
+5. Establish motor handshake/timeout/negative acknowledgment semantics.
+   A UART queue acceptance means **accepted**, not physical completion.
+   Frames are sent **once**, without dangerous repeat/retry behavior.
+
+## Regression tests
+
+CI additionally checks Zigbee2MQTT converter syntax using Node.js. CI always runs pure host C command-capture and DP-state tests, a passive
+Python UART decoder test, the **default safe firmware build** with bounds
+check, and a **separate bench-only enabled firmware compilation**. Only the
+SAFE configuration files are archived, not executable firmware UF2 binaries.
+
+
+## Passive P3 UART diagnostics (experimental, no motor TX)
+
+Firmware exposes local, read-only, nonstandard Basic-cluster attributes on endpoint 10.
+Read via Zigbee2MQTT's updated external converter using
+`p3_diagnostics_refresh=refresh` (one ZCL Basic Read of 11 attributes).
+The converter presents diagnostic numbers, but **does not** turn DP3 or
+DP13 into the standard Zigbee lift/battery readings.
+
+| ZCL Basic attribute | Converter field | Meaning |
+|---|---|---|
+| 0xF100 | p3_uart_rx_bytes | Total UART RX bytes consumed since boot |
+| 0xF101 | p3_uart_valid_frames | Valid Tuya UART frames (all commands) |
+| 0xF102 | p3_uart_rejected_frames | Parser reset/errors (not only checksum errors) |
+| 0xF103 | p3_uart_dropped_bytes | ISR queue overflow bytes |
+| 0xF104 | p3_uart_accepted_reports | Valid classic DP status reports (cmd 0x07) |
+| 0xF105 | p3_uart_last_command | Command of last valid UART frame (255 = unknown) |
+| 0xF106 | p3_uart_last_format | Framing type of last UART frame (255 = unknown) |
+| 0xF107 | p3_dp1_raw | DP1 enum (255 = unknown) |
+| 0xF108 | p3_dp3_raw | DP3 raw position-related value (255 = unknown) |
+| 0xF109 | p3_dp13_raw | DP13 raw battery-related value (255 = unknown) |
+| 0xF10A | p3_uart_rx_ready | UART RX IRQ enabled = 1 |
+
+Values update in the Zigbee scheduler after each complete valid frame, parser
+rejection or UART initialization. They remain readable while UART is quiet;
+they are **not** pushed periodically to minimize battery drain. To refresh
+the front-end state, send:
+
+```text
+topic: zigbee2mqtt_lan/0xf4ce3651044a1830/set
+payload: {"p3_diagnostics_refresh":"refresh"}
+```
+
+Do not mistake `position` set via UI for confirmed motor feedback.
+For the **first isolated passive test**, connect only P3 TXD to HW-954
+P0.17 RX and a common ground, with P3 and HW-954 separately powered and
+their supplies electrically isolated. P0.20 TX MUST stay disconnected;
+do not connect battery B+ / USB / RAW together. Any power/backfeed
+uncertainty must be resolved before connecting signal wires. No automatic
+startup handshake is sent with the default safe configuration, so RX values
+can remain zero if the motor does not emit unsolicited frames.
+
+
+## Build #31 — optional physical TX of four *service-only* startup requests
+
+The Build #31 binary enables **CONFIG_P3_DIAG_STARTUP_QUERIES=y**. This is
+**not a passive UART-only image**: after the receiver is armed, it
+physically transmits exactly four previously observed 7-byte classic P3
+MCU requests, once at boot: 0x00 heartbeat, 0x01 product, 0x02 work mode,
+0x08 DP state query. Each has a 150 ms inter-request spacing and no retries.
+The TX worker then exits. The firmware **does not** send movement/STOP/position
+or Wi-Fi status frames and **does not** transmit on Zigbee join or a Z2M
+refresh. General `CONFIG_P3_UART_TX_ENABLE=n` and
+`CONFIG_P3_MCU_INIT_ENABLE=n` remain in effect. Standard DP3 and DP13
+mappings stay disabled. The programmable blue LED is OFF on successful
+Zigbee join/rejoin (as in Build #30).
+
+**Caution:** UART TX is electrically active during boot even though the
+movement path is disabled. UART pin naming on the original P3 adapter is
+relative to WBR3: the original P3 **TX-labeled** net is the module output
+into the motor; HW-954 P0.20 TX must attach to that net only after
+electrical isolation is established, with P3 **RX-labeled** net wired to
+HW-954 P0.17 RX and shared signal GND. Do not connect P3 power or battery
+to HW-954 USB/RAW. Physically isolate power before any wiring.
+
+Two extra diagnostic attributes:
+- `0xF10B` `p3_uart_startup_requests_sent` (0..4), increments after each
+  seven-byte service request has been queued to the UART hardware.
+- `0xF10C` `p3_uart_startup_finished` (0 or 1), becomes 1 when the TX
+  worker exits after one pass. This is NOT confirmation of MCU response.
+
+After startup use the unchanged MQTT request
+`{"p3_diagnostics_refresh":"refresh"}`. A successful handshake
+requires `p3_uart_rx_bytes>0` and valid MCU frames; four transmitted
+requests alone prove no reply. For accurate readings the updated Z2M
+converter from this commit is required. The previously validated Build
+#29 UART RX-only UF2 is retained for rollback.

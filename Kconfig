@@ -1,0 +1,64 @@
+# P3 motor feature flags. All potentially dangerous actions OFF by default.
+mainmenu "nice!nano Tuya P3 Zigbee blind"
+source "Kconfig.zephyr"
+
+menu "P3 prototype features"
+
+config P3_UART_TX_ENABLE
+    bool "ENABLE real Tuya P3 motor UART transmission (hardware test only)"
+    default n
+    help
+      WARNING: Allows real motor movement from Zigbee commands.
+      Only enable after validating pinout, supply, UART startup and
+      safe end-stop behavior on the real P3 installation.
+      Disabled by default even when the host tests succeed.
+
+config P3_DIAG_STARTUP_QUERIES
+    bool "Send four allowlisted P3 startup diagnostic UART requests ONCE"
+    default n
+    help
+      Diagnostic-only physical UART TX with the movement command path OFF.
+      Once after UART RX is ready, sends exactly four previously captured
+      classic Tuya zero-data request frames: heartbeat 0x00, product 0x01,
+      work mode 0x02, status query 0x08, in that order. No repeats, movement
+      commands, target positions, STOP, Wi-Fi status, or Zigbee-triggered
+      transmissions are possible in this diagnostic mode. Requires safe
+      hardware-level UART 3.3 V, separate supplies, common GND and actual
+      P3 TXD -> nRF P0.20 connected only for supervised bench testing.
+      Choose this feature WITHOUT P3_UART_TX_ENABLE or P3_MCU_INIT_ENABLE.
+
+config P3_MCU_INIT_ENABLE
+    bool "Send captured WBR3 wake initialization (no motor motion)"
+    depends on P3_UART_TX_ENABLE
+    default n
+    help
+      Replays verified startup request opcodes after UART RX initialization:
+      0x00 heartbeat, 0x01 product, 0x02 mode, 0x08 DP query.
+      This does NOT send any motor movement or legacy Wi-Fi state.
+      Repeated heartbeat intervals were not measured, so periodic polling
+      is NOT implemented. Hardware startup reliability still untested.
+
+config P3_ZCL_POSITION_ENABLE
+    bool "Expose DP3 as current lift percentage (physical polarity to verify)"
+    default n
+    help
+      Enables Zigbee CurrentPositionLiftPercentage updates based on DP3.
+      Do not enable until DP3 and physical end-stop orientation are verified.
+
+config P3_ZCL_POSITION_INVERT
+    bool "Invert DP3 lift percentage and Zigbee requested setpoint"
+    depends on P3_ZCL_POSITION_ENABLE
+    default n
+    help
+      Zigbee Window Covering reports 0 percent as OPEN and 100 as CLOSED.
+      Enable if actual DP3 is 0 percent CLOSED and 100 OPEN.
+
+config P3_ZCL_BATTERY_ENABLE
+    bool "Map DP13 to Zigbee Power Configuration battery percentage"
+    default n
+    help
+      DP13=40 was observed while the battery displayed 40 percent.
+      Separate runtime verification of source and calibration is required.
+      Zigbee BatteryPercentageRemaining is half-percent units (40%=80).
+
+endmenu
