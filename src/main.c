@@ -24,6 +24,22 @@
 #define BLIND_ENDPOINT 10
 #define BLIND_REPORT_RECORDS 8
 
+/* LocalDIY read-only Basic-cluster diagnostics. Standard lift/battery
+ * reporting remains disabled until the physical motor semantics are proven.
+ * These private attribute IDs are accessed without a manufacturer header.
+ */
+#define P3_DIAG_RX_BYTES 0xF100U
+#define P3_DIAG_VALID_FRAMES 0xF101U
+#define P3_DIAG_REJECTED 0xF102U
+#define P3_DIAG_DROPPED 0xF103U
+#define P3_DIAG_REPORTS 0xF104U
+#define P3_DIAG_LAST_COMMAND 0xF105U
+#define P3_DIAG_LAST_FORMAT 0xF106U
+#define P3_DIAG_DP1 0xF107U
+#define P3_DIAG_DP3 0xF108U
+#define P3_DIAG_DP13 0xF109U
+#define P3_DIAG_RX_READY 0xF10AU
+
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
 struct blind_device_context {
@@ -44,6 +60,19 @@ struct blind_device_context {
 
     zb_uint8_t battery_voltage;       /* 0xFF: unknown, no ADC measurement */
     zb_uint8_t battery_remaining_half;/* 0xFF: unknown, ZCL unit 0.5% */
+
+    /* Raw, volatile UART receiver diagnostics (Basic 0xF100..0xF10A). */
+    zb_uint32_t diag_rx_bytes;
+    zb_uint32_t diag_valid_frames;
+    zb_uint32_t diag_rejected_frames;
+    zb_uint32_t diag_dropped_bytes;
+    zb_uint32_t diag_accepted_reports;
+    zb_uint8_t diag_last_command;
+    zb_uint8_t diag_last_format;
+    zb_uint8_t diag_dp1_raw;
+    zb_uint8_t diag_dp3_raw;
+    zb_uint8_t diag_dp13_raw;
+    zb_uint8_t diag_rx_ready;
 };
 
 static struct blind_device_context blind_ctx;
@@ -58,6 +87,28 @@ ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_BASIC_ZCL_VERSION_ID, &blind_ctx.basic_attr.zcl
 ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_BASIC_POWER_SOURCE_ID, &blind_ctx.basic_attr.power_source)
 ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_BASIC_MANUFACTURER_NAME_ID, blind_manufacturer)
 ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_BASIC_MODEL_IDENTIFIER_ID, blind_model)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_RX_BYTES, &blind_ctx.diag_rx_bytes,
+    ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_VALID_FRAMES, &blind_ctx.diag_valid_frames,
+    ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_REJECTED, &blind_ctx.diag_rejected_frames,
+    ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_DROPPED, &blind_ctx.diag_dropped_bytes,
+    ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_REPORTS, &blind_ctx.diag_accepted_reports,
+    ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_LAST_COMMAND, &blind_ctx.diag_last_command,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_LAST_FORMAT, &blind_ctx.diag_last_format,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_DP1, &blind_ctx.diag_dp1_raw,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_DP3, &blind_ctx.diag_dp3_raw,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_DP13, &blind_ctx.diag_dp13_raw,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_RX_READY, &blind_ctx.diag_rx_ready,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -187,6 +238,11 @@ static void initialize_attributes(void)
 
     blind_ctx.battery_voltage = 0xffU;
     blind_ctx.battery_remaining_half = 0xffU;
+    blind_ctx.diag_last_command = 0xffU;
+    blind_ctx.diag_last_format = 0xffU;
+    blind_ctx.diag_dp1_raw = 0xffU;
+    blind_ctx.diag_dp3_raw = 0xffU;
+    blind_ctx.diag_dp13_raw = 0xffU;
     blind_ctx.groups_attr.name_support = 0;
     blind_ctx.scenes_attr.scene_count = 0;
     blind_ctx.scenes_attr.current_scene = 0;
@@ -198,11 +254,28 @@ static void initialize_attributes(void)
 static void apply_p3_zcl_state(zb_uint8_t dummy)
 {
     struct tuya_motor_state state;
+    struct tuya_uart_diagnostics diag;
     zb_uint8_t value;
 
     ARG_UNUSED(dummy);
     atomic_set(&p3_update_pending, 0);
     tuya_uart_get_state(&state);
+    tuya_uart_get_diagnostics(&diag);
+
+    /* Attribute storage belongs to ZBOSS; update it only in its context.
+     * Every value is read-only and obtainable with standard ZCL Read.
+     */
+    blind_ctx.diag_rx_bytes = diag.rx_bytes;
+    blind_ctx.diag_valid_frames = diag.valid_frames;
+    blind_ctx.diag_rejected_frames = diag.rejected_frames;
+    blind_ctx.diag_dropped_bytes = diag.dropped_bytes;
+    blind_ctx.diag_accepted_reports = state.report_count;
+    blind_ctx.diag_last_command = diag.last_command;
+    blind_ctx.diag_last_format = diag.last_format;
+    blind_ctx.diag_dp1_raw = state.motion_valid ? state.motion : 0xffU;
+    blind_ctx.diag_dp3_raw = state.position_valid ? state.position : 0xffU;
+    blind_ctx.diag_dp13_raw = state.battery_valid ? state.battery : 0xffU;
+    blind_ctx.diag_rx_ready = diag.rx_ready;
 
     if (IS_ENABLED(CONFIG_P3_ZCL_POSITION_ENABLE) && state.position_valid) {
         value = IS_ENABLED(CONFIG_P3_ZCL_POSITION_INVERT) ?

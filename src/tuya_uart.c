@@ -29,7 +29,14 @@ K_MSGQ_DEFINE(p3_rx_queue, sizeof(uint8_t), 256, 1);
 K_MUTEX_DEFINE(p3_state_mutex);
 static struct tuya_motor_state motor_state;
 static atomic_t rx_dropped;
+static atomic_t rx_dropped_total;
+static atomic_t rx_bytes_total;
 static atomic_t uart_ready;
+K_MUTEX_DEFINE(p3_diag_mutex);
+static struct tuya_uart_diagnostics p3_diag = {
+    .last_command = 0xffU,
+    .last_format = 0xffU,
+};
 
 struct p3_tx_msg {
     uint8_t bytes[P3_TX_FRAME_CAP];
@@ -49,6 +56,19 @@ void tuya_uart_get_state(struct tuya_motor_state *out)
     k_mutex_lock(&p3_state_mutex, K_FOREVER);
     *out = motor_state;
     k_mutex_unlock(&p3_state_mutex);
+}
+
+void tuya_uart_get_diagnostics(struct tuya_uart_diagnostics *out)
+{
+    if (!out) {
+        return;
+    }
+    k_mutex_lock(&p3_diag_mutex, K_FOREVER);
+    *out = p3_diag;
+    k_mutex_unlock(&p3_diag_mutex);
+    out->rx_bytes = (uint32_t)atomic_get(&rx_bytes_total);
+    out->dropped_bytes = (uint32_t)atomic_get(&rx_dropped_total);
+    out->rx_ready = (uint8_t)atomic_get(&uart_ready);
 }
 
 static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
@@ -144,6 +164,7 @@ static void motor_uart_isr(const struct device *device, void *user_data)
         for (int i = 0; i < n; ++i) {
             if (k_msgq_put(&p3_rx_queue, &data[i], K_NO_WAIT) != 0) {
                 atomic_inc(&rx_dropped);
+                atomic_inc(&rx_dropped_total);
             }
         }
     } while (n > 0);
@@ -161,7 +182,6 @@ static void process_report(const struct tuya_frame *frame)
     if (valid && (changes.position || changes.battery || changes.motion)) {
         LOG_INF("P3 report state changed: motion=%u lift=%u battery=%u",
                 changes.motion, changes.position, changes.battery);
-        p3_zcl_schedule_sync();
     }
 }
 
@@ -191,16 +211,34 @@ static void receive_main(void *a, void *b, void *c)
     }
     uart_irq_rx_enable(motor_uart);
     atomic_set(&uart_ready, 1);
+    p3_zcl_schedule_sync();
     enqueue_captured_startup();
     LOG_INF("Tuya P3 9600 RX active; motor TX %s",
             IS_ENABLED(CONFIG_P3_UART_TX_ENABLE) ? "enabled (prototype)" : "DISABLED");
 
     for (;;) {
+        uint32_t prior_rejected = parser.rejected;
+
         k_msgq_get(&p3_rx_queue, &byte, K_FOREVER);
+        atomic_inc(&rx_bytes_total);
         if (tuya_parser_feed(&parser, byte, &frame)) {
+            k_mutex_lock(&p3_diag_mutex, K_FOREVER);
+            p3_diag.valid_frames++;
+            p3_diag.last_command = frame.command;
+            p3_diag.last_format = (uint8_t)frame.format;
+            p3_diag.rejected_frames = parser.rejected;
+            k_mutex_unlock(&p3_diag_mutex);
+
             LOG_DBG("P3 UART format=%u cmd=0x%02x len=%u",
                     (unsigned int)frame.format, frame.command, frame.length);
             process_report(&frame);
+            /* Refresh read-only Zigbee diagnostics on the ZBOSS thread. */
+            p3_zcl_schedule_sync();
+        } else if (parser.rejected != prior_rejected) {
+            k_mutex_lock(&p3_diag_mutex, K_FOREVER);
+            p3_diag.rejected_frames = parser.rejected;
+            k_mutex_unlock(&p3_diag_mutex);
+            p3_zcl_schedule_sync();
         }
         if (atomic_get(&rx_dropped) > 0) {
             LOG_WRN("P3 UART RX overflow: %ld bytes dropped",

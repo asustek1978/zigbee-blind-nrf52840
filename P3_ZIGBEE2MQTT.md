@@ -60,3 +60,45 @@ CI additionally checks Zigbee2MQTT converter syntax using Node.js. CI always run
 Python UART decoder test, the **default safe firmware build** with bounds
 check, and a **separate bench-only enabled firmware compilation**. Only the
 SAFE configuration files are archived, not executable firmware UF2 binaries.
+
+
+## Passive P3 UART diagnostics (experimental, no motor TX)
+
+Firmware exposes local, read-only, nonstandard Basic-cluster attributes on endpoint 10.
+Read via Zigbee2MQTT's updated external converter using
+`p3_diagnostics_refresh=refresh` (one ZCL Basic Read of 11 attributes).
+The converter presents diagnostic numbers, but **does not** turn DP3 or
+DP13 into the standard Zigbee lift/battery readings.
+
+| ZCL Basic attribute | Converter field | Meaning |
+|---|---|---|
+| 0xF100 | p3_uart_rx_bytes | Total UART RX bytes consumed since boot |
+| 0xF101 | p3_uart_valid_frames | Valid Tuya UART frames (all commands) |
+| 0xF102 | p3_uart_rejected_frames | Parser reset/errors (not only checksum errors) |
+| 0xF103 | p3_uart_dropped_bytes | ISR queue overflow bytes |
+| 0xF104 | p3_uart_accepted_reports | Valid classic DP status reports (cmd 0x07) |
+| 0xF105 | p3_uart_last_command | Command of last valid UART frame (255 = unknown) |
+| 0xF106 | p3_uart_last_format | Framing type of last UART frame (255 = unknown) |
+| 0xF107 | p3_dp1_raw | DP1 enum (255 = unknown) |
+| 0xF108 | p3_dp3_raw | DP3 raw position-related value (255 = unknown) |
+| 0xF109 | p3_dp13_raw | DP13 raw battery-related value (255 = unknown) |
+| 0xF10A | p3_uart_rx_ready | UART RX IRQ enabled = 1 |
+
+Values update in the Zigbee scheduler after each complete valid frame, parser
+rejection or UART initialization. They remain readable while UART is quiet;
+they are **not** pushed periodically to minimize battery drain. To refresh
+the front-end state, send:
+
+```text
+topic: zigbee2mqtt_lan/0xf4ce3651044a1830/set
+payload: {"p3_diagnostics_refresh":"refresh"}
+```
+
+Do not mistake `position` set via UI for confirmed motor feedback.
+For the **first isolated passive test**, connect only P3 TXD to HW-954
+P0.17 RX and a common ground, with P3 and HW-954 separately powered and
+their supplies electrically isolated. P0.20 TX MUST stay disconnected;
+do not connect battery B+ / USB / RAW together. Any power/backfeed
+uncertainty must be resolved before connecting signal wires. No automatic
+startup handshake is sent with the default safe configuration, so RX values
+can remain zero if the motor does not emit unsolicited frames.
