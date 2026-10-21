@@ -10,6 +10,9 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+/* Enable the HA device definition in ZBOSS headers before including zboss_api.h. */
+#define ZB_HA_DEFINE_DEVICE_WINDOW_COVERING
+
 #include <zboss_api.h>
 #include <zboss_api_zcl.h>
 #include <zboss_api_addons.h>
