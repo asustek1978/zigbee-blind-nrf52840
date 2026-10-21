@@ -1,16 +1,79 @@
 /dts-v1/;
 #include <nordic/nrf52840_qiaa.dtsi>
-#include <nordic/nrf52840_partition.dtsi>
 #include "nicenano_zigbee_nrf52840-pinctrl.dtsi"
 
 / {
     model = "nice!nano nRF52840 Zigbee prototype";
     compatible = "custom,nicenano-zigbee-nrf52840";
+
     chosen {
+        zephyr,sram = &sram0;
+        zephyr,flash = &flash0;
+        zephyr,code-partition = &slot0_partition;
         zephyr,ieee802154 = &ieee802154;
+        ncs,zigbee-timer = &timer2;
     };
+
     aliases {
         motor-uart = &uart0;
+    };
+};
+
+/*
+ * DIAGNOSTIC FLASH LAYOUT ONLY — NOT VERIFIED AGAINST OUR UF2 BOOTLOADER.
+ * Derived from the nice!nano v2 partition example:
+ *
+ *   0x00000-0x25fff  Existing S140 / reserved region
+ *   0x26000-0xebfff  Application
+ *   0xec000-0xeffff  ZBOSS NVRAM (16 KiB)
+ *   0xf0000-0xf0fff  ZBOSS production config
+ *   0xf1000-0xf3fff  Reserved storage
+ *   0xf4000-0xfffff  UF2 bootloader / reserved region
+ *
+ * Do not flash firmware built with this layout until the physical
+ * board's bootloader, vector-table offset and memory map are verified.
+ */
+&flash0 {
+    partitions {
+        ranges;
+        #address-cells = <1>;
+        #size-cells = <1>;
+
+        softdevice_partition: partition@0 {
+            compatible = "zephyr,mapped-partition";
+            label = "reserved-softdevice";
+            reg = <0x00000000 0x00026000>;
+        };
+
+        slot0_partition: partition@26000 {
+            compatible = "zephyr,mapped-partition";
+            label = "image-0";
+            reg = <0x00026000 0x000c6000>;
+        };
+
+        zboss_nvram: partition@ec000 {
+            compatible = "zephyr,mapped-partition";
+            label = "zboss-nvram";
+            reg = <0x000ec000 0x00004000>;
+        };
+
+        zboss_product_config: partition@f0000 {
+            compatible = "zephyr,mapped-partition";
+            label = "zboss-product-config";
+            reg = <0x000f0000 0x00001000>;
+        };
+
+        storage_partition: partition@f1000 {
+            compatible = "zephyr,mapped-partition";
+            label = "storage";
+            reg = <0x000f1000 0x00003000>;
+        };
+
+        uf2_bootloader_partition: partition@f4000 {
+            compatible = "zephyr,mapped-partition";
+            label = "reserved-uf2-bootloader";
+            reg = <0x000f4000 0x0000c000>;
+        };
     };
 };
 
@@ -19,6 +82,7 @@
 &gpio0 { status = "okay"; };
 &gpio1 { status = "okay"; };
 &gpiote { status = "okay"; };
+
 &uart0 {
     compatible = "nordic,nrf-uarte";
     status = "okay";
@@ -27,4 +91,6 @@
     pinctrl-1 = <&uart0_sleep>;
     pinctrl-names = "default", "sleep";
 };
+
+&timer2 { status = "okay"; };
 &ieee802154 { status = "okay"; };
