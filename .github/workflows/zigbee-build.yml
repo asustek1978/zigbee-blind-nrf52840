@@ -51,6 +51,14 @@ jobs:
              -o host-test/test_tuya_frame
           host-test/test_tuya_frame
 
+      - name: Verify previously captured P3 motor command bytes
+        run: |
+          mkdir -p host-test
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+             -Iapp/include app/src/tuya_frame.c app/src/tuya_motor.c \
+             app/tests/test_tuya_motor.c -o host-test/test_tuya_motor
+          host-test/test_tuya_motor
+
       - name: Test passive UART capture and offline decoder
         run: |
           PYTHONPATH=app/tools python3 -m unittest discover -s app/tests -p 'test_tuya_capture.py' -v

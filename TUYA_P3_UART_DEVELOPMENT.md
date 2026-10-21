@@ -42,3 +42,7 @@ This is a **compile/test prototype**, not a hardware-validated binary.
 ## Passive capture utility
 
 See [TUYA_P3_CAPTURE_WINDOWS.md](TUYA_P3_CAPTURE_WINDOWS.md). The host decoder supports all documented DP-carrying command IDs; no UART TX is added.
+
+## Previously captured motor-specific data
+
+Real UART WBR3 ↔ P3 captures from October 19–20 are already available. See [P3_CONFIRMED_UART.md](P3_CONFIRMED_UART.md). Do not repeat captures solely to rediscover OPEN/STOP/CLOSE and DP2 set position; command encoders and host regression tests now use those exact frames.

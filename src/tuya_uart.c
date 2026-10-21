@@ -44,13 +44,16 @@ static void describe_dp(const struct tuya_dp *dp, void *user)
 
     ARG_UNUSED(user);
     if (tuya_dp_as_uint32(dp, &number)) {
-        LOG_INF("P3 DP id=%u type=%u value=%u (unverified mapping)",
+        LOG_INF("P3 DP id=%u type=%u value=%u (captured/raw)",
                 dp->id, dp->type, number);
     } else {
         LOG_INF("P3 DP id=%u type=%u length=%u (raw/unknown)",
                 dp->id, dp->type, dp->length);
     }
-    /* DP1 / DP3 / DP13 remain unknown until motor-specific capture. */
+    /* The motor-specific captures from Oct 19-20 confirmed DP1/2 command
+     * bytes and observed DP3=62/DP13=40. Reporting semantics and polarity
+     * are not yet verified; do not update ZCL attributes from this callback.
+     */
 }
 
 static void receive_main(void *a, void *b, void *c)
