@@ -127,7 +127,7 @@ jobs:
           cfg=build-nicenano/zephyr/.config
           grep '^CONFIG_ZIGBEE_ROLE_END_DEVICE=y' "$cfg"
           grep '^CONFIG_USE_DT_CODE_PARTITION=y' "$cfg"
-          for opt in P3_UART_TX_ENABLE P3_ZCL_POSITION_ENABLE P3_ZCL_BATTERY_ENABLE; do
+          for opt in P3_UART_TX_ENABLE P3_MCU_INIT_ENABLE P3_ZCL_POSITION_ENABLE P3_ZCL_POSITION_INVERT P3_ZCL_BATTERY_ENABLE; do
             if grep -qx "CONFIG_${opt}=y" "$cfg"; then
               echo "::error::Unsafe default: CONFIG_${opt} enabled"
               exit 1
@@ -188,6 +188,50 @@ jobs:
           name: zigbee-build-diagnostics
           path: diagnostic/
           if-no-files-found: warn
+
+      - name: Package safe HW-954 Zigbee diagnostic UF2
+        if: success() && steps.build.outcome == 'success'
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840.uf2
+          cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
+          cp build-nicenano/zephyr/.config release/zephyr.config
+          git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
+          (
+            cd release
+            sha256sum P3-NRF52840.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840.uf2
+          )
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840.uf2
+          cat > release/READ_ME_FIRST.txt <<'EOF'
+          P3-NRF52840.uf2 — EXPERIMENTAL SAFE DIAGNOSTIC BUILD
+
+          Target: HW-954 nRF52840 nice!nano-compatible clone,
+          UF2 Bootloader 0.6.0, SoftDevice S140 v6.1.1.
+          Zigbee: Sleepy End Device, Window Covering cluster 0x0102, endpoint 10.
+
+          THIS FILE IS NOT THE BOOTLOADER. It contains application bytes only.
+          No motor movement UART TX, no speculative ZCL position or battery
+          reporting, and no P3 MCU initialization are enabled.
+
+          WARNING: Compiled and statically validated, but NOT yet boot-tested
+          on the physical HW-954 clone. Do not connect motor or P3 battery
+          during initial USB flash / Zigbee radio experiment.
+
+          Check SHA256SUMS.txt. Reset into UF2 mode before copying the .uf2.
+          If the new application fails, the original UF2 loader may still
+          be reachable by double-reset; SWD recovery is the reliable fallback.
+          EOF
+
+      - name: Upload verified safe diagnostic UF2
+        if: success() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: P3-NRF52840-safe-UF2
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Report build status
         if: steps.build.outcome == 'failure'
