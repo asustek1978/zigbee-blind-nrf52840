@@ -37,6 +37,14 @@ enum tuya_motor_request {
 size_t tuya_motor_encode_request(enum tuya_motor_request request,
                                  uint8_t *out, size_t capacity);
 
+/* Hard allowlist for one-time Build 31 diagnostic TX. Valid indices 0..3,
+ * always seven bytes, no DP or movement commands. Caller MUST NOT send
+ * any other encoder's output in this diagnostic mode.
+ */
+#define TUYA_DIAGNOSTIC_STARTUP_STEPS 4U
+size_t tuya_motor_encode_diag_startup_step(size_t index,
+                                          uint8_t *out, size_t capacity);
+
 /* Captured WBR3 network status 03 and 04, but neither is transmitted
  * automatically: Wi-Fi "cloud" state must not be invented for Zigbee.
  */

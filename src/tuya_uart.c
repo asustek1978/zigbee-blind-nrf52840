@@ -32,6 +32,19 @@ static atomic_t rx_dropped;
 static atomic_t rx_dropped_total;
 static atomic_t rx_bytes_total;
 static atomic_t uart_ready;
+static atomic_t diag_startup_requests_sent;
+static atomic_t diag_startup_finished;
+K_SEM_DEFINE(p3_uart_rx_started, 0, 1);
+/* Diagnostic startup is mutually exclusive with general motor UART TX.
+ * Even with this feature enabled, cover/position Zigbee commands are
+ * rejected and cannot reach the TX worker.
+ */
+BUILD_ASSERT(!(IS_ENABLED(CONFIG_P3_DIAG_STARTUP_QUERIES) &&
+               IS_ENABLED(CONFIG_P3_UART_TX_ENABLE)),
+             "Diagnostic startup UART TX cannot coexist with motor movement TX");
+BUILD_ASSERT(!(IS_ENABLED(CONFIG_P3_DIAG_STARTUP_QUERIES) &&
+               IS_ENABLED(CONFIG_P3_MCU_INIT_ENABLE)),
+             "Diagnostic startup UART TX cannot coexist with legacy MCU init");
 K_MUTEX_DEFINE(p3_diag_mutex);
 static struct tuya_uart_diagnostics p3_diag = {
     .last_command = 0xffU,
@@ -69,6 +82,10 @@ void tuya_uart_get_diagnostics(struct tuya_uart_diagnostics *out)
     out->rx_bytes = (uint32_t)atomic_get(&rx_bytes_total);
     out->dropped_bytes = (uint32_t)atomic_get(&rx_dropped_total);
     out->rx_ready = (uint8_t)atomic_get(&uart_ready);
+    out->diag_startup_requests_sent =
+        (uint8_t)atomic_get(&diag_startup_requests_sent);
+    out->diag_startup_finished =
+        (uint8_t)atomic_get(&diag_startup_finished);
 }
 
 static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
@@ -211,10 +228,12 @@ static void receive_main(void *a, void *b, void *c)
     }
     uart_irq_rx_enable(motor_uart);
     atomic_set(&uart_ready, 1);
+    k_sem_give(&p3_uart_rx_started);
     p3_zcl_schedule_sync();
     enqueue_captured_startup();
-    LOG_INF("Tuya P3 9600 RX active; motor TX %s",
-            IS_ENABLED(CONFIG_P3_UART_TX_ENABLE) ? "enabled (prototype)" : "DISABLED");
+    LOG_INF("Tuya P3 9600 RX active; motor movement TX %s, startup diag %s",
+            IS_ENABLED(CONFIG_P3_UART_TX_ENABLE) ? "enabled (prototype)" : "DISABLED",
+            IS_ENABLED(CONFIG_P3_DIAG_STARTUP_QUERIES) ? "ONE TIME" : "disabled");
 
     for (;;) {
         uint32_t prior_rejected = parser.rejected;
@@ -254,6 +273,40 @@ static void transmit_main(void *a, void *b, void *c)
     ARG_UNUSED(a);
     ARG_UNUSED(b);
     ARG_UNUSED(c);
+
+    if (IS_ENABLED(CONFIG_P3_DIAG_STARTUP_QUERIES)) {
+        uint8_t request[7];
+
+        /* The four observed service frames are sent once after RX is
+         * armed. No ZCL path can trigger TX and no command uses DP=1/2.
+         */
+        k_sem_take(&p3_uart_rx_started, K_FOREVER);
+        for (size_t step = 0; step < TUYA_DIAGNOSTIC_STARTUP_STEPS; ++step) {
+            const size_t count =
+                tuya_motor_encode_diag_startup_step(step, request, sizeof(request));
+            if (count != sizeof(request) ||
+                request[0] != 0x55U || request[1] != 0xaaU ||
+                request[2] != 0x00U || request[4] != 0x00U ||
+                request[5] != 0x00U ||
+                (request[3] != 0x00U && request[3] != 0x01U &&
+                 request[3] != 0x02U && request[3] != 0x08U)) {
+                LOG_ERR("P3 diagnostic TX allowlist violation; halted");
+                break;
+            }
+            for (size_t i = 0; i < count; ++i) {
+                uart_poll_out(motor_uart, request[i]);
+            }
+            atomic_inc(&diag_startup_requests_sent);
+            p3_zcl_schedule_sync();
+            /* Give the MCU time to reply; no retransmission or poll loop. */
+            k_msleep(150);
+        }
+        atomic_set(&diag_startup_finished, 1);
+        p3_zcl_schedule_sync();
+        LOG_INF("P3 one-time diagnostic startup sent %ld/4 service frames",
+                (long)atomic_get(&diag_startup_requests_sent));
+        return; /* TX worker exits permanently after this attempt. */
+    }
 
     if (!IS_ENABLED(CONFIG_P3_UART_TX_ENABLE)) {
         /* A permanently blocked TX worker must not wake for any reason. */

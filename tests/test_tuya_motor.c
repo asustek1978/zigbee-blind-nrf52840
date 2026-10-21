@@ -112,6 +112,26 @@ static void test_real_mcu_reports(void)
 }
 
 
+static void test_diagnostic_startup_allowlist(void)
+{
+    static const uint8_t observed[TUYA_DIAGNOSTIC_STARTUP_STEPS][7] = {
+        {0x55, 0xaa, 0x00, 0x00, 0x00, 0x00, 0xff},
+        {0x55, 0xaa, 0x00, 0x01, 0x00, 0x00, 0x00},
+        {0x55, 0xaa, 0x00, 0x02, 0x00, 0x00, 0x01},
+        {0x55, 0xaa, 0x00, 0x08, 0x00, 0x00, 0x07}
+    };
+    uint8_t output[32];
+    for (size_t i = 0; i < TUYA_DIAGNOSTIC_STARTUP_STEPS; ++i) {
+        assert(tuya_motor_encode_diag_startup_step(i, output, sizeof(output)) == 7U);
+        assert(memcmp(output, observed[i], sizeof(observed[i])) == 0);
+        assert(output[4] == 0U && output[5] == 0U);
+        assert(tuya_motor_encode_diag_startup_step(i, output, 6U) == 0U);
+    }
+    assert(tuya_motor_encode_diag_startup_step(TUYA_DIAGNOSTIC_STARTUP_STEPS,
+                                               output, sizeof(output)) == 0U);
+    assert(tuya_motor_encode_diag_startup_step(0U, NULL, sizeof(output)) == 0U);
+}
+
 static void test_captured_wbr3_startup(void)
 {
     /* Real motor wake sequence Oct 19. Check exact classic UART bytes. */
@@ -158,6 +178,7 @@ static void test_captured_wbr3_startup(void)
 
 int main(void)
 {
+    test_diagnostic_startup_allowlist();
     test_captured_wbr3_startup();
     test_motor_commands();
     test_invalid_control_and_bounds();

@@ -102,3 +102,39 @@ do not connect battery B+ / USB / RAW together. Any power/backfeed
 uncertainty must be resolved before connecting signal wires. No automatic
 startup handshake is sent with the default safe configuration, so RX values
 can remain zero if the motor does not emit unsolicited frames.
+
+
+## Build #31 — optional physical TX of four *service-only* startup requests
+
+The Build #31 binary enables **CONFIG_P3_DIAG_STARTUP_QUERIES=y**. This is
+**not a passive UART-only image**: after the receiver is armed, it
+physically transmits exactly four previously observed 7-byte classic P3
+MCU requests, once at boot: 0x00 heartbeat, 0x01 product, 0x02 work mode,
+0x08 DP state query. Each has a 150 ms inter-request spacing and no retries.
+The TX worker then exits. The firmware **does not** send movement/STOP/position
+or Wi-Fi status frames and **does not** transmit on Zigbee join or a Z2M
+refresh. General `CONFIG_P3_UART_TX_ENABLE=n` and
+`CONFIG_P3_MCU_INIT_ENABLE=n` remain in effect. Standard DP3 and DP13
+mappings stay disabled. The programmable blue LED is OFF on successful
+Zigbee join/rejoin (as in Build #30).
+
+**Caution:** UART TX is electrically active during boot even though the
+movement path is disabled. UART pin naming on the original P3 adapter is
+relative to WBR3: the original P3 **TX-labeled** net is the module output
+into the motor; HW-954 P0.20 TX must attach to that net only after
+electrical isolation is established, with P3 **RX-labeled** net wired to
+HW-954 P0.17 RX and shared signal GND. Do not connect P3 power or battery
+to HW-954 USB/RAW. Physically isolate power before any wiring.
+
+Two extra diagnostic attributes:
+- `0xF10B` `p3_uart_startup_requests_sent` (0..4), increments after each
+  seven-byte service request has been queued to the UART hardware.
+- `0xF10C` `p3_uart_startup_finished` (0 or 1), becomes 1 when the TX
+  worker exits after one pass. This is NOT confirmation of MCU response.
+
+After startup use the unchanged MQTT request
+`{"p3_diagnostics_refresh":"refresh"}`. A successful handshake
+requires `p3_uart_rx_bytes>0` and valid MCU frames; four transmitted
+requests alone prove no reply. For accurate readings the updated Z2M
+converter from this commit is required. The previously validated Build
+#29 UART RX-only UF2 is retained for rollback.

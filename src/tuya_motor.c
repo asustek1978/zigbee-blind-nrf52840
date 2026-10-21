@@ -74,6 +74,22 @@ size_t tuya_motor_encode_request(enum tuya_motor_request request,
     return tuya_encode(&packet, out, capacity);
 }
 
+size_t tuya_motor_encode_diag_startup_step(size_t index,
+                                          uint8_t *out, size_t capacity)
+{
+    static const enum tuya_motor_request allowlist[TUYA_DIAGNOSTIC_STARTUP_STEPS] = {
+        TUYA_MOTOR_HEARTBEAT,
+        TUYA_MOTOR_PRODUCT_QUERY,
+        TUYA_MOTOR_WORK_MODE_QUERY,
+        TUYA_MOTOR_STATE_QUERY
+    };
+
+    if (index >= TUYA_DIAGNOSTIC_STARTUP_STEPS || out == NULL) {
+        return 0U;
+    }
+    return tuya_motor_encode_request(allowlist[index], out, capacity);
+}
+
 size_t tuya_motor_encode_legacy_network_status(uint8_t status,
                                                uint8_t *out, size_t capacity)
 {

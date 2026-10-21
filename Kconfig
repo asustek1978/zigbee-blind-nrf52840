@@ -13,6 +13,20 @@ config P3_UART_TX_ENABLE
       safe end-stop behavior on the real P3 installation.
       Disabled by default even when the host tests succeed.
 
+config P3_DIAG_STARTUP_QUERIES
+    bool "Send four allowlisted P3 startup diagnostic UART requests ONCE"
+    default n
+    help
+      Diagnostic-only physical UART TX with the movement command path OFF.
+      Once after UART RX is ready, sends exactly four previously captured
+      classic Tuya zero-data request frames: heartbeat 0x00, product 0x01,
+      work mode 0x02, status query 0x08, in that order. No repeats, movement
+      commands, target positions, STOP, Wi-Fi status, or Zigbee-triggered
+      transmissions are possible in this diagnostic mode. Requires safe
+      hardware-level UART 3.3 V, separate supplies, common GND and actual
+      P3 TXD -> nRF P0.20 connected only for supervised bench testing.
+      Choose this feature WITHOUT P3_UART_TX_ENABLE or P3_MCU_INIT_ENABLE.
+
 config P3_MCU_INIT_ENABLE
     bool "Send captured WBR3 wake initialization (no motor motion)"
     depends on P3_UART_TX_ENABLE

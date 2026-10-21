@@ -42,6 +42,8 @@
 #define P3_DIAG_DP3 0xF108U
 #define P3_DIAG_DP13 0xF109U
 #define P3_DIAG_RX_READY 0xF10AU
+#define P3_DIAG_STARTUP_SENT 0xF10BU
+#define P3_DIAG_STARTUP_DONE 0xF10CU
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -76,6 +78,8 @@ struct blind_device_context {
     zb_uint8_t diag_dp3_raw;
     zb_uint8_t diag_dp13_raw;
     zb_uint8_t diag_rx_ready;
+    zb_uint8_t diag_startup_requests_sent;
+    zb_uint8_t diag_startup_finished;
 };
 
 static struct blind_device_context blind_ctx;
@@ -130,6 +134,10 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_DP3, &blind_ctx.diag_dp3_raw,
 ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_DP13, &blind_ctx.diag_dp13_raw,
     ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_RX_READY, &blind_ctx.diag_rx_ready,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_STARTUP_SENT, &blind_ctx.diag_startup_requests_sent,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_STARTUP_DONE, &blind_ctx.diag_startup_finished,
     ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
@@ -298,6 +306,8 @@ static void apply_p3_zcl_state(zb_uint8_t dummy)
     blind_ctx.diag_dp3_raw = state.position_valid ? state.position : 0xffU;
     blind_ctx.diag_dp13_raw = state.battery_valid ? state.battery : 0xffU;
     blind_ctx.diag_rx_ready = diag.rx_ready;
+    blind_ctx.diag_startup_requests_sent = diag.diag_startup_requests_sent;
+    blind_ctx.diag_startup_finished = diag.diag_startup_finished;
 
     if (IS_ENABLED(CONFIG_P3_ZCL_POSITION_ENABLE) && state.position_valid) {
         value = IS_ENABLED(CONFIG_P3_ZCL_POSITION_INVERT) ?

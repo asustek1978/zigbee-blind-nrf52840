@@ -28,6 +28,8 @@ struct tuya_uart_diagnostics {
     uint8_t last_command;
     uint8_t last_format;
     uint8_t rx_ready;
+    uint8_t diag_startup_requests_sent; /* 0..4; full 7-byte UART frames */
+    uint8_t diag_startup_finished;      /* 1 after one-time attempt ends */
 };
 
 void tuya_uart_get_diagnostics(struct tuya_uart_diagnostics *out);

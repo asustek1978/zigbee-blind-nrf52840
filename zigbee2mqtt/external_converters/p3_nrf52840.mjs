@@ -1,6 +1,7 @@
 /* Zigbee2MQTT external converter for the custom Zigbee End Device.
  * The firmware advertises model P3-NRF52840 and endpoint 10.
- * UART transmission remains disabled by default in firmware.
+ * Movement UART TX stays disabled. Build 31 optionally emits exactly
+ * four non-movement service queries once at startup (separate allowlist).
  */
 import * as fz from 'zigbee-herdsman-converters/converters/fromZigbee';
 import * as tz from 'zigbee-herdsman-converters/converters/toZigbee';
@@ -25,6 +26,8 @@ const diagnosticAttrs = {
     p3_dp3_raw: 0xf108,
     p3_dp13_raw: 0xf109,
     p3_uart_rx_ready: 0xf10a,
+    p3_uart_startup_requests_sent: 0xf10b,
+    p3_uart_startup_finished: 0xf10c,
 };
 
 const p3DiagnosticsFromZigbee = {
@@ -67,7 +70,7 @@ export default {
             e.numeric(key, ea.STATE).withCategory('diagnostic')
         ),
         e.enum('p3_diagnostics_refresh', ea.SET, ['refresh'])
-            .withDescription('Read all passive P3 UART diagnostics over Zigbee. No motor commands.'),
+            .withDescription('Read P3 UART diagnostics (including one-time non-movement startup queries).'),
     ],
     endpoint: () => ({default: 10}),
     configure: async (device, coordinatorEndpoint) => {

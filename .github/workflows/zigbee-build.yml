@@ -120,7 +120,7 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Enforce safe motor defaults in diagnostic firmware
+      - name: Enforce build 31 diagnostic TX-only profile and blocked movement
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
@@ -142,7 +142,8 @@ jobs:
               }
             fi
           done
-          echo "SAFE DEFAULTS PASS: UART motor TX and speculative ZCL reports disabled."
+          grep -qx '^CONFIG_P3_DIAG_STARTUP_QUERIES=y' "$cfg"
+          echo "BUILD 31 PASS: only 4 allowlisted non-movement UART requests; cover TX blocked."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -194,46 +195,55 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package safe HW-954 Zigbee diagnostic UF2
+      - name: Package HW-954 one-time UART startup diagnostic UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-build31.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840.uf2
+            sha256sum P3-NRF52840-build31.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-build31.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-build31.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840.uf2 — EXPERIMENTAL SAFE DIAGNOSTIC BUILD
+          P3-NRF52840-build31.uf2 — EXPERIMENTAL ONE-TIME P3 UART TX BENCH BUILD
 
           Target: HW-954 nRF52840 nice!nano-compatible clone,
           UF2 Bootloader 0.6.0, SoftDevice S140 v6.1.1.
           Zigbee: Sleepy End Device, Window Covering cluster 0x0102, endpoint 10.
 
           THIS FILE IS NOT THE BOOTLOADER. It contains application bytes only.
-          No motor movement UART TX, no speculative ZCL position or battery
-          reporting, and no P3 MCU initialization are enabled.
+          MOTOR MOVEMENT is DISABLED. This image nevertheless PHYSICALLY
+          TRANSMITS four captured NON-MOVEMENT Tuya P3 UART requests once
+          after RX initialization: heartbeat 0x00, product 0x01,
+          work mode 0x02, DP state query 0x08. No retries, motion
+          commands, position targets or Zigbee-triggered motor TX.
+          Speculative ZCL position and battery mapping remain disabled.
+          The fourth service request sequence is NOT electrically isolated.
 
           WARNING: Compiled and statically validated, but NOT yet boot-tested
           on the physical HW-954 clone. Do not connect motor or P3 battery
-          during initial USB flash / Zigbee radio experiment.
+          during USB flashing. Before connecting UART TX P0.20 to P3 TX,
+          physically verify power isolation and nonconflicting 3.3V levels,
+          with common signal GND. DO NOT flash while the P3 motor circuit
+          and USB/battery power are connected. Service commands are NOT
+          proven motion-free on every P3 firmware variant.
 
           Check SHA256SUMS.txt. Reset into UF2 mode before copying the .uf2.
           If the new application fails, the original UF2 loader may still
           be reachable by double-reset; SWD recovery is the reliable fallback.
           EOF
 
-      - name: Upload verified safe diagnostic UF2
+      - name: Upload build 31 startup diagnostic UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-safe-UF2
+          name: P3-NRF52840-build31-startup-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30

@@ -85,3 +85,14 @@ Four repeated heartbeats were observed but their interval was not measured.
 Therefore the firmware does NOT invent a periodic heartbeat schedule.
 The actual MCU wake/response and whether additional handshakes are required
 remain hardware test items.
+
+
+## Build 31 diagnostic distinction (October 21)
+
+Build 31 adds `CONFIG_P3_DIAG_STARTUP_QUERIES=y` to send only the
+four byte-for-byte validated non-motion Tuya MCU startup requests once
+after UART RX is enabled. `CONFIG_P3_UART_TX_ENABLE=n` still blocks
+all Window Covering commands. `CONFIG_P3_MCU_INIT_ENABLE=n` prevents
+use of the legacy initializer. Physical RX/TX signaling and motor
+response remain unverified for the current HW-954/P3 wiring. Treat this
+as a supervised hardware experiment, not a general deployment.
