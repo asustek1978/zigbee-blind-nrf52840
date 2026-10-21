@@ -10,17 +10,17 @@ This branch replaces the Nordic Zigbee Router template with a battery-oriented
 - `zigbee_configure_sleepy_behavior(true)`, called before
   `zigbee_enable()`; 30-second keepalive, 64-minute aging timeout.
 - Basic (0x0000), Identify (0x0003), Groups (0x0004),
-  Scenes (0x0005), Window Covering (0x0102) server clusters.
+  Scenes (0x0005), Window Covering (0x0102), Power Configuration (0x0001).
 - Roller shade type; initial position **unknown** (`0xFF`);
   status reports **not operational** until motor feedback is available.
-- Commands Open, Close, Stop, Go to Lift Percentage are **rejected with
-  an error**, rather than falsely acknowledged or simulated.
+- Commands are routed to validated motor UART encoders only when the explicit
+  CONFIG_P3_UART_TX_ENABLE switch is enabled. Default firmware rejects motion.
 - UART0 pin routing is unchanged (P0.20 TX, P0.17 RX, 9600 baud).
 
 ## Not yet implemented
 
-- Tuya P3 UART frames, command confirmation, position and battery updates.
-- Zigbee Power Configuration (0x0001) battery reporting.
+- End-to-end hardware confirmation of motor operation, ack/error handling and
+  physical position / battery calibration (source code and feature flags exist).
 - Hardware sleep current or radio commissioning tests on the physical board.
 - Verification of nice!nano S140/UF2 bootloader compatibility.
 

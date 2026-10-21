@@ -46,3 +46,7 @@ See [TUYA_P3_CAPTURE_WINDOWS.md](TUYA_P3_CAPTURE_WINDOWS.md). The host decoder s
 ## Previously captured motor-specific data
 
 Real UART WBR3 ↔ P3 captures from October 19–20 are already available. See [P3_CONFIRMED_UART.md](P3_CONFIRMED_UART.md). Do not repeat captures solely to rediscover OPEN/STOP/CLOSE and DP2 set position; command encoders and host regression tests now use those exact frames.
+
+## Current firmware implementation
+
+The previously reported pending TX and DP status items are now implemented **behind OFF-by-default Kconfig gates**. See [P3_ZIGBEE2MQTT.md](P3_ZIGBEE2MQTT.md) and `src/main.c`, `src/tuya_uart.c`. The diagnostic instructions above describe the original receive-only stage, not the current optional bench TX build.

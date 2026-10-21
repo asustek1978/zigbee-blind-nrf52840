@@ -47,13 +47,18 @@ struct blind_device_context {
 };
 
 static struct blind_device_context blind_ctx;
+/* Zigbee strings use a one-byte LENGTH followed by UTF-8 ASCII bytes. */
+static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
+static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 
-ZB_ZCL_DECLARE_BASIC_ATTRIB_LIST(
-    basic_attr_list,
-    &blind_ctx.basic_attr.zcl_version,
-    &blind_ctx.basic_attr.power_source);
+ZB_ZCL_START_DECLARE_ATTRIB_LIST_CLUSTER_REVISION(basic_attr_list, ZB_ZCL_BASIC)
+ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_BASIC_ZCL_VERSION_ID, &blind_ctx.basic_attr.zcl_version)
+ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_BASIC_POWER_SOURCE_ID, &blind_ctx.basic_attr.power_source)
+ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_BASIC_MANUFACTURER_NAME_ID, blind_manufacturer)
+ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_BASIC_MODEL_IDENTIFIER_ID, blind_model)
+ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
     identify_attr_list,

@@ -119,6 +119,22 @@ jobs:
           python3 app/tools/check_uf2_layout.py \
             build-nicenano/zephyr/zephyr.uf2 | tee diagnostic/uf2_report.txt
 
+      - name: Compile enabled motor/Zigbee feedback variant (not flash-ready)
+        if: steps.build.outcome == 'success'
+        working-directory: workspace
+        run: |
+          set -euo pipefail
+          west build -b nicenano_zigbee/nrf52840 \
+            -d "$GITHUB_WORKSPACE/build-nicenano-bench" \
+            --pristine=always --no-sysbuild \
+            "$GITHUB_WORKSPACE/app" -- \
+            "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
+            "-DEXTRA_CONF_FILE=$GITHUB_WORKSPACE/app/tests/p3_bench_features.conf"
+          grep '^CONFIG_P3_UART_TX_ENABLE=y' "$GITHUB_WORKSPACE/build-nicenano-bench/zephyr/.config"
+          grep '^CONFIG_P3_ZCL_POSITION_ENABLE=y' "$GITHUB_WORKSPACE/build-nicenano-bench/zephyr/.config"
+          grep '^CONFIG_P3_ZCL_BATTERY_ENABLE=y' "$GITHUB_WORKSPACE/build-nicenano-bench/zephyr/.config"
+          echo "BENCH CONFIG COMPILED ONLY; no flashable artifact uploaded."
+
       - name: Save diagnostic configuration
         if: always()
         run: |

@@ -5,6 +5,8 @@
 #include "tuya_motor_state.h"
 #include "tuya_uart.h"
 
+#include <string.h>
+
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/uart.h>
