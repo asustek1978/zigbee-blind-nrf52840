@@ -11,6 +11,8 @@ on:
       - 'tools/**'
       - 'include/**'
       - 'boards/**'
+      - 'Kconfig'
+      - 'zigbee2mqtt/**'
       - 'prj.conf'
       - 'CMakeLists.txt'
       - 'Kconfig.sysbuild'
