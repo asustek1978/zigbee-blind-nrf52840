@@ -1,0 +1,104 @@
+name: Zigbee nRF52840 Linux build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/zigbee-build.yml'
+      - 'src/**'
+      - 'include/**'
+      - 'boards/**'
+      - 'prj.conf'
+      - 'CMakeLists.txt'
+      - 'Kconfig.sysbuild'
+      - 'sysbuild.conf'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout blind application
+        uses: actions/checkout@v4
+        with:
+          path: app
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git cmake ninja-build gperf ccache dfu-util device-tree-compiler \
+            wget xz-utils file gcc g++ make python3-dev python3-pip python3-venv \
+            libmagic1
+
+      - name: Create Python environment
+        run: |
+          python3 -m venv "$GITHUB_WORKSPACE/.venv"
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          "$GITHUB_WORKSPACE/.venv/bin/pip" install -U pip west
+
+      - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
+        run: |
+          mkdir workspace
+          cd workspace
+          west init -m https://github.com/nrfconnect/ncs-zigbee --mr v1.4.0 .
+          west update
+          west list -f '{name}: {revision} {abspath}' > ../west-projects.txt
+
+      - name: Install Zephyr and NCS Python requirements
+        run: |
+          pip install -r workspace/zephyr/scripts/requirements.txt
+          pip install -r workspace/nrf/scripts/requirements.txt
+
+      - name: Install Zephyr SDK
+        run: |
+          SDK_VERSION=0.17.4
+          wget -q "https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${SDK_VERSION}/zephyr-sdk-${SDK_VERSION}_linux-x86_64_minimal.tar.xz"
+          tar -xf "zephyr-sdk-${SDK_VERSION}_linux-x86_64_minimal.tar.xz"
+          mv "zephyr-sdk-${SDK_VERSION}" "$HOME/zephyr-sdk"
+          "$HOME/zephyr-sdk/setup.sh" -t arm-zephyr-eabi -h -c
+          echo "ZEPHYR_SDK_INSTALL_DIR=$HOME/zephyr-sdk" >> "$GITHUB_ENV"
+
+      - name: Build custom nice nano board (diagnostic)
+        id: build
+        continue-on-error: true
+        working-directory: workspace
+        run: |
+          set -o pipefail
+          west build -b nicenano_zigbee/nrf52840 \
+            -d "$GITHUB_WORKSPACE/build-nicenano" \
+            --pristine=always --no-sysbuild \
+            "$GITHUB_WORKSPACE/app" -- \
+            "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
+            2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+
+      - name: Save diagnostic configuration
+        if: always()
+        run: |
+          mkdir -p diagnostic
+          cp -f build.log diagnostic/ 2>/dev/null || true
+          cp -f west-projects.txt diagnostic/ 2>/dev/null || true
+          cp -f build-nicenano/zephyr/.config diagnostic/zephyr.config 2>/dev/null || true
+          cp -f build-nicenano/zephyr/zephyr.dts diagnostic/zephyr.dts 2>/dev/null || true
+          cp -f build-nicenano/zephyr/zephyr.map diagnostic/zephyr.map 2>/dev/null || true
+          if [ -f build-nicenano/zephyr/.config ]; then
+            grep -E '^(CONFIG_(SOC_NRF52840|HAS_NRFX|ZIGBEE_ADD_ON|ZIGBEE_ROLE_).*)' build-nicenano/zephyr/.config || true
+          fi
+
+      - name: Upload diagnostic files (not flash-ready)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zigbee-build-diagnostics
+          path: diagnostic/
+          if-no-files-found: warn
+
+      - name: Report build status
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "Diagnostic build failed; inspect zigbee-build-diagnostics artifact."
+          exit 1
