@@ -1,5 +1,6 @@
 /dts-v1/;
 #include <nordic/nrf52840_qiaa.dtsi>
+#include <zephyr/dt-bindings/gpio/gpio.h>
 #include "nicenano_zigbee_nrf52840-pinctrl.dtsi"
 
 / {
@@ -16,6 +17,18 @@
 
     aliases {
         motor-uart = &uart0;
+        status-led = &p3_status_led;
+    };
+
+    leds {
+        compatible = "gpio-leds";
+        /* nice!nano-compatible blue status LED, active-low on P0.15.
+         * This is NOT the hardwired battery-charge indicator.
+         */
+        p3_status_led: status_led_0 {
+            gpios = <&gpio0 15 GPIO_ACTIVE_LOW>;
+            label = "HW-954 Blue Zigbee Status";
+        };
     };
 };
 

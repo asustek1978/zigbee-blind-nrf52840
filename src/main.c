@@ -6,6 +6,9 @@
  * DISABLED by default. Bootloader/SoftDevice map not yet verified.
  */
 #include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/util.h>
@@ -81,6 +84,25 @@ static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
+
+/* The programmable BLUE status LED is active-low at nRF52840 P0.15
+ * on nice!nano-compatible boards. Do not touch charger LED hardware.
+ * Zigbee joined/rejoined => LED off, unjoined => LED on.
+ */
+static const struct gpio_dt_spec p3_status_led =
+    GPIO_DT_SPEC_GET(DT_ALIAS(status_led), gpios);
+static bool p3_status_led_ready;
+
+static void set_join_status_led(bool joined)
+{
+    if (p3_status_led_ready) {
+        /* GPIO logical 0 means physically HIGH => LED OFF. */
+        int err = gpio_pin_set_dt(&p3_status_led, joined ? 0 : 1);
+        if (err != 0) {
+            LOG_WRN("P3 status LED write failed: %d", err);
+        }
+    }
+}
 
 ZB_ZCL_START_DECLARE_ATTRIB_LIST_CLUSTER_REVISION(basic_attr_list, ZB_ZCL_BASIC)
 ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_BASIC_ZCL_VERSION_ID, &blind_ctx.basic_attr.zcl_version)
@@ -378,7 +400,25 @@ static void covering_device_callback(zb_bufid_t bufid)
 
 void zboss_signal_handler(zb_bufid_t bufid)
 {
+    zb_zdo_app_signal_hdr_t *signal_hdr = NULL;
+    zb_zdo_app_signal_type_t signal = zb_get_app_signal(bufid, &signal_hdr);
+    zb_ret_t signal_status = ZB_GET_APP_SIGNAL_STATUS(bufid);
+
+    /* Keep Nordic's commissioning/rejoin handler intact. */
     ZB_ERROR_CHECK(zigbee_default_signal_handler(bufid));
+
+    if (signal == ZB_BDB_SIGNAL_DEVICE_REBOOT ||
+        signal == ZB_BDB_SIGNAL_STEERING) {
+        if (signal_status == RET_OK) {
+            set_join_status_led(true);  /* Joined/rejoined: blue LED OFF */
+        } else {
+            set_join_status_led(false); /* Not joined: show status */
+        }
+    } else if (signal == ZB_ZDO_SIGNAL_LEAVE &&
+               signal_status == RET_OK) {
+        set_join_status_led(false);
+    }
+
     if (bufid) {
         zb_buf_free(bufid);
     }
@@ -387,6 +427,23 @@ void zboss_signal_handler(zb_bufid_t bufid)
 int main(void)
 {
     LOG_INF("Starting P3 Zigbee Window Covering sleepy End Device");
+
+    /* Do not interfere with USB UF2 bootloader behavior; this runs only
+     * after the application starts. If the clone has no compatible LED
+     * on P0.15, initialization failure leaves Zigbee operation intact.
+     */
+    if (gpio_is_ready_dt(&p3_status_led)) {
+        int err = gpio_pin_configure_dt(&p3_status_led, GPIO_OUTPUT_ACTIVE);
+        if (err == 0) {
+            p3_status_led_ready = true;
+            set_join_status_led(false);
+        } else {
+            LOG_WRN("P3 status LED setup failed: %d", err);
+        }
+    } else {
+        LOG_WRN("P3 status LED GPIO unavailable");
+    }
+
     ZB_AF_REGISTER_DEVICE_CTX(&blind_device_ctx);
     initialize_attributes();
     ZB_ZCL_REGISTER_DEVICE_CB(covering_device_callback);

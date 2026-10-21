@@ -77,3 +77,18 @@ Do not flash this binary until this mapping and recovery are proven.
 
 Default firmware intentionally rejects movement commands. Bench-enabled
 configuration is a compile test, not authorization to move the motor.
+
+## Blue LED control (application firmware from build #30)
+
+The nice!nano-compatible **programmable blue LED** is connected to nRF52840
+**P0.15**, active-low in the board device tree. The app lights it while Zigbee
+is not joined, and drives it **OFF** when successful
+`ZB_BDB_SIGNAL_STEERING` (initial join) or
+`ZB_BDB_SIGNAL_DEVICE_REBOOT` (restored network) is received.
+On successful leave, it lights again. The original UF2 bootloader behavior
+is **unchanged**; the app controls P0.15 only after boot.
+
+This is **not** the charge-indicator LED: an LED wired to a charger IC
+cannot be disabled with P0.15. Some HW-954 clones may differ in the
+status-LED wiring; confirm visually on the actual hardware before assuming
+the pin/polarity is correct. No motor TX is enabled by this change.
