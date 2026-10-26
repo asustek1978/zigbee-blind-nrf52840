@@ -28,6 +28,9 @@ const diagnosticAttrs = {
     p3_uart_rx_ready: 0xf10a,
     p3_uart_startup_requests_sent: 0xf10b,
     p3_uart_startup_finished: 0xf10c,
+    p3_cal_bottom_raw: 0xf10e,
+    p3_cal_top_raw: 0xf10f,
+    p3_cal_valid: 0xf110,
 };
 
 const p3DiagnosticsFromZigbee = {
@@ -39,11 +42,28 @@ const p3DiagnosticsFromZigbee = {
             const raw = msg.data[id] ?? msg.data[String(id)] ?? msg.data[`0x${id.toString(16)}`];
             if (typeof raw !== 'number') continue;
             // 0xFF explicitly represents "not observed" for these fields.
-            result[key] = (['p3_dp1_raw', 'p3_dp3_raw', 'p3_dp13_raw',
+            result[key] = (['p3_dp1_raw', 'p3_dp3_raw', 'p3_dp13_raw', 'p3_cal_bottom_raw', 'p3_cal_top_raw',
                             'p3_uart_last_command', 'p3_uart_last_format'].includes(key)
                             && raw === 255) ? null : raw;
         }
         return result;
+    },
+};
+
+/* Calibration stores the current motor DP3. 1=bottom, 2=top, 3=reset.
+ * This must only be used AFTER the motor has completely stopped.
+ */
+const p3Calibration = {
+    key: ['p3_calibration'],
+    convertSet: async (entity, key, value) => {
+        const commands = {save_bottom: 1, save_top: 2, reset: 3};
+        if (!Object.prototype.hasOwnProperty.call(commands, value)) {
+            throw new Error('P3 calibration expects save_bottom, save_top or reset');
+        }
+        await entity.write('genBasic', {
+            0xf10d: {value: commands[value], type: 0x20},
+        });
+        await entity.read('genBasic', [0xf10e, 0xf10f, 0xf110]);
     },
 };
 
@@ -69,12 +89,14 @@ export default {
     vendor: 'LocalDIY',
     description: 'Battery-powered Tuya P3 roller blind on nice!nano nRF52840 (prototype)',
     fromZigbee: [fz.cover_position_tilt, fz.battery, p3DiagnosticsFromZigbee],
-    toZigbee: [tz.cover_state, tz.cover_position_tilt, p3DiagnosticsRefresh],
+    toZigbee: [tz.cover_state, tz.cover_position_tilt, p3DiagnosticsRefresh, p3Calibration],
     exposes: [
         e.cover_position(), e.battery(),
         ...Object.keys(diagnosticAttrs).map((key) =>
             e.numeric(key, ea.STATE).withCategory('diagnostic')
         ),
+        e.enum('p3_calibration', ea.SET, ['save_bottom', 'save_top', 'reset'])
+            .withDescription('Save current DP3 as bottom or top endpoint; reset returns to build 35 mapping.'),
         e.enum('p3_diagnostics_refresh', ea.SET, ['refresh'])
             .withDescription('Read P3 UART diagnostics (including one-time non-movement startup queries).'),
     ],
