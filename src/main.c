@@ -378,12 +378,30 @@ static void covering_device_callback(zb_bufid_t bufid)
         action = TUYA_MOTOR_STOP;
         queued = tuya_uart_submit_action(action);
         break;
-    case ZB_ZCL_WINDOW_COVERING_GO_TO_LIFT_PERCENTAGE_CB_ID:
-        /* Build 33: DP2 setpoint is NOT verified on real P3 hardware.
-         * Reject all requested percentages; only OPEN/CLOSE/STOP allowed.
+    case ZB_ZCL_WINDOW_COVERING_GO_TO_LIFT_PERCENTAGE_CB_ID: {
+        /* Build 35: guarded DP2 position test on the experimental P3 only.
+         * ZCL position is 0=open, 100=closed. Reverse only when configured.
+         * Never set the reported position optimistically: wait for DP3 RX.
          */
-        param->status = RET_ERROR;
-        return;
+        const zb_zcl_go_to_lift_percentage_req_t *req =
+            ZB_ZCL_DEVICE_CMD_PARAM_IN_GET(
+                bufid, zb_zcl_go_to_lift_percentage_req_t);
+        zb_uint8_t percent;
+
+        if (req == NULL || req->percentage_lift_value > 100U ||
+            !IS_ENABLED(CONFIG_P3_POSITION_TARGET_ENABLE)) {
+            param->status = RET_ERROR;
+            return;
+        }
+        percent = req->percentage_lift_value;
+        if (IS_ENABLED(CONFIG_P3_ZCL_POSITION_INVERT)) {
+            percent = (zb_uint8_t)(100U - percent);
+        }
+        queued = tuya_uart_submit_position(percent);
+        LOG_INF("P3 position target ZCL=%u DP2=%u queued=%u",
+                req->percentage_lift_value, percent, queued);
+        break;
+    }
     case ZB_ZCL_WINDOW_COVERING_GO_TO_TILT_PERCENTAGE_CB_ID:
         param->status = RET_ERROR; /* P3 is a lift-only blind */
         return;
