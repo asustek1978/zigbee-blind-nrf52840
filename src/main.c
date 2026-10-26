@@ -379,19 +379,11 @@ static void covering_device_callback(zb_bufid_t bufid)
         queued = tuya_uart_submit_action(action);
         break;
     case ZB_ZCL_WINDOW_COVERING_GO_TO_LIFT_PERCENTAGE_CB_ID:
-    {
-        const zb_zcl_go_to_lift_percentage_req_t *req =
-            ZB_ZCL_DEVICE_CMD_PARAM_IN_GET(bufid,
-                                           zb_zcl_go_to_lift_percentage_req_t);
-        if (req != NULL && req->percentage_lift_value <= 100U) {
-            uint8_t target = req->percentage_lift_value;
-            if (IS_ENABLED(CONFIG_P3_ZCL_POSITION_INVERT)) {
-                target = (uint8_t)(100U - target);
-            }
-            queued = tuya_uart_submit_position(target);
-        }
-        break;
-    }
+        /* Build 33: DP2 setpoint is NOT verified on real P3 hardware.
+         * Reject all requested percentages; only OPEN/CLOSE/STOP allowed.
+         */
+        param->status = RET_ERROR;
+        return;
     case ZB_ZCL_WINDOW_COVERING_GO_TO_TILT_PERCENTAGE_CB_ID:
         param->status = RET_ERROR; /* P3 is a lift-only blind */
         return;
