@@ -579,7 +579,14 @@ int main(void)
         LOG_WRN("P3 status LED GPIO unavailable");
     }
 
-    p3_cal_load();
+    {
+        int settings_err = settings_subsys_init();
+        if (settings_err == 0) {
+            p3_cal_load();
+        } else {
+            LOG_ERR("P3 calibration settings unavailable: %d", settings_err);
+        }
+    }
     ZB_AF_REGISTER_DEVICE_CTX(&blind_device_ctx);
     initialize_attributes();
     ZB_ZCL_REGISTER_DEVICE_CB(covering_device_callback);
