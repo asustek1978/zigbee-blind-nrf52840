@@ -181,7 +181,8 @@ static bool p3_cal_apply_command(zb_uint8_t command)
             proposed.mask |= 2U;
         }
         if ((proposed.mask & 3U) == 3U &&
-            ABS((int)proposed.bottom - (int)proposed.top) < 5) return false;
+            ((int)proposed.bottom < (int)proposed.top + 5 &&
+             (int)proposed.top < (int)proposed.bottom + 5)) return false;
     } else return false;
     p3_cal = proposed;
     atomic_set(&p3_cal_dirty, 1);
