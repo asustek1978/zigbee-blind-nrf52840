@@ -120,14 +120,14 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Enforce build 33 supervised motor UART mode
+      - name: Enforce build 34 motor control and DP13 battery mapping
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           cfg=build-nicenano/zephyr/.config
           grep '^CONFIG_ZIGBEE_ROLE_END_DEVICE=y' "$cfg"
           grep '^CONFIG_USE_DT_CODE_PARTITION=y' "$cfg"
-          for opt in P3_MCU_INIT_ENABLE P3_DIAG_STARTUP_QUERIES P3_ZCL_POSITION_INVERT P3_ZCL_BATTERY_ENABLE; do
+          for opt in P3_MCU_INIT_ENABLE P3_DIAG_STARTUP_QUERIES P3_ZCL_POSITION_INVERT; do
             if grep -qx "CONFIG_${opt}=y" "$cfg"; then
               echo "::error::Unsafe default: CONFIG_${opt} enabled"
               exit 1
@@ -144,11 +144,12 @@ jobs:
           done
           grep -qx '^CONFIG_P3_ZCL_POSITION_ENABLE=y' "$cfg"
           grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg"
+          grep -qx '^CONFIG_P3_ZCL_BATTERY_ENABLE=y' "$cfg"
           if grep -q 'tuya_uart_submit_position(target)' app/src/main.c; then
             echo '::error::Unverified DP2 ZCL setpoint path remains enabled'
             exit 1
           fi
-          echo "BUILD 33 PASS: OPEN/CLOSE/STOP enabled; DP2 target and startup traffic disabled."
+          echo "BUILD 34 PASS: OPEN/CLOSE/STOP and provisional DP13 battery enabled; DP2 target blocked."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -200,29 +201,29 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package HW-954 supervised OPEN CLOSE STOP UF2
+      - name: Package HW-954 motor control and DP13 battery UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-build33.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-build34.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-build33.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-build33.uf2
+            sha256sum P3-NRF52840-build34.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-build34.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-build33.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-build34.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840-build33.uf2 — EXPERIMENTAL MOTOR UART CONTROL
+          P3-NRF52840-build34.uf2 — MOTOR CONTROL AND PROVISIONAL DP13 BATTERY
 
           Target: HW-954 nRF52840 nice!nano-compatible clone.
           Zigbee: End Device, endpoint 10; DP3 RX position reporting retained.
 
           UART TX P0.20 IS ENABLED; this may physically move the motor.
-          Commands: OPEN, CLOSE, STOP only. Zigbee position targets (DP2)
+          Commands: OPEN, CLOSE, STOP only. Raw DP13 0..100 is mapped\n          to Zigbee battery percentage; calibration not independently verified.\n          Zigbee position targets (DP2)
           rejected; no automatic UART startup queries, no MCU init.
           OPEN tested through CP2102; CLOSE and STOP not independently
           confirmed by user. This is a SUPERVISED BENCH BUILD ONLY.
@@ -240,11 +241,11 @@ jobs:
           be reachable by double-reset; SWD recovery is the reliable fallback.
           EOF
 
-      - name: Upload build 33 supervised motor UART UF2
+      - name: Upload build 34 motor UART and battery UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-build33-motor-control-UF2
+          name: P3-NRF52840-build34-battery-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
