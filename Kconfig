@@ -45,6 +45,16 @@ config P3_ZCL_POSITION_ENABLE
       Enables Zigbee CurrentPositionLiftPercentage updates based on DP3.
       Use only after confirming DP3 is a valid 0..100 position.\n      Verify physical open/closed orientation before treating the value as\n      calibrated; reporting is read-only and cannot move the motor.
 
+config P3_POSITION_TARGET_ENABLE
+    bool "Enable experimental DP2 percentage setpoint (supervised testing only)"
+    depends on P3_UART_TX_ENABLE && P3_ZCL_POSITION_ENABLE
+    default n
+    help
+      Allows Zigbee GoToLiftPercentage to send DP2 target values to P3.
+      DP2 target behavior is not yet verified on physical P3 hardware.
+      Enable only on the experimental blind, with working STOP and
+      a clear path to stop motor movement. Does not calibrate motor limits.
+
 config P3_ZCL_POSITION_INVERT
     bool "Invert DP3 lift percentage and Zigbee requested setpoint"
     depends on P3_ZCL_POSITION_ENABLE
