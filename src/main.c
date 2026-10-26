@@ -12,6 +12,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/settings/settings.h>
+#include <string.h>
 
 #include "tuya_uart.h"
 
@@ -44,6 +46,10 @@
 #define P3_DIAG_RX_READY 0xF10AU
 #define P3_DIAG_STARTUP_SENT 0xF10BU
 #define P3_DIAG_STARTUP_DONE 0xF10CU
+#define P3_CAL_COMMAND 0xF10DU
+#define P3_CAL_BOTTOM 0xF10EU
+#define P3_CAL_TOP 0xF10FU
+#define P3_CAL_VALID 0xF110U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -80,6 +86,10 @@ struct blind_device_context {
     zb_uint8_t diag_rx_ready;
     zb_uint8_t diag_startup_requests_sent;
     zb_uint8_t diag_startup_finished;
+    zb_uint8_t cal_command;
+    zb_uint8_t cal_bottom;
+    zb_uint8_t cal_top;
+    zb_uint8_t cal_valid;
 };
 
 static struct blind_device_context blind_ctx;
@@ -88,6 +98,96 @@ static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
+
+/* Software travel endpoints in raw DP3 units, NOT hardware limit programming.
+ * mask bit 0 = bottom, bit 1 = top. Minimum span 5%.
+ * Without both valid endpoints, fall back to proven build 35 mapping.
+ */
+struct p3_calibration { zb_uint8_t bottom, top, mask, magic; };
+static struct p3_calibration p3_cal;
+#define P3_CAL_MAGIC 0x36U
+static atomic_t p3_cal_dirty;
+static void p3_cal_save_work_fn(struct k_work *work);
+K_WORK_DEFINE(p3_cal_save_work, p3_cal_save_work_fn);
+
+static bool p3_cal_complete(void)
+{
+    return (p3_cal.mask & 3U) == 3U &&
+        ABS((int)p3_cal.bottom - (int)p3_cal.top) >= 5;
+}
+
+static zb_uint8_t p3_raw_to_zcl(zb_uint8_t raw)
+{
+    int out;
+    if (!p3_cal_complete()) {
+        return IS_ENABLED(CONFIG_P3_ZCL_POSITION_INVERT) ? 100U - raw : raw;
+    }
+    out = ((int)raw - (int)p3_cal.top) * 100 /
+        ((int)p3_cal.bottom - (int)p3_cal.top);
+    return (zb_uint8_t)CLAMP(out, 0, 100);
+}
+
+static zb_uint8_t p3_zcl_to_raw(zb_uint8_t target)
+{
+    int raw;
+    if (!p3_cal_complete()) {
+        return IS_ENABLED(CONFIG_P3_ZCL_POSITION_INVERT) ? 100U - target : target;
+    }
+    raw = (int)p3_cal.top +
+        ((int)p3_cal.bottom - (int)p3_cal.top) * (int)target / 100;
+    return (zb_uint8_t)CLAMP(raw, 0, 100);
+}
+
+/* Do not block the Zigbee callback on flash I/O. */
+static void p3_cal_save_work_fn(struct k_work *work)
+{
+    struct p3_calibration copy;
+    int err;
+    ARG_UNUSED(work);
+    if (!atomic_set(&p3_cal_dirty, 0)) return;
+    copy = p3_cal;
+    copy.magic = P3_CAL_MAGIC;
+    err = settings_save_one("p3/calibration", &copy, sizeof(copy));
+    if (err != 0) LOG_ERR("P3 calibration save error %d", err);
+}
+
+static void p3_cal_load(void)
+{
+    struct p3_calibration saved = {0};
+    ssize_t n = settings_load_one("p3/calibration", &saved, sizeof(saved));
+    if (n == sizeof(saved) && saved.magic == P3_CAL_MAGIC &&
+        saved.bottom <= 100U && saved.top <= 100U &&
+        !(saved.mask & ~3U)) {
+        p3_cal = saved;
+    }
+}
+
+static bool p3_cal_apply_command(zb_uint8_t command)
+{
+    struct tuya_motor_state state;
+    struct p3_calibration proposed = p3_cal;
+    if (command == 3U) {
+        memset(&proposed, 0, sizeof(proposed));
+    } else if (command == 1U || command == 2U) {
+        tuya_uart_get_state(&state);
+        if (!state.position_valid || state.position > 100U) return false;
+        if (command == 1U) {
+            proposed.bottom = state.position;
+            proposed.mask |= 1U;
+        } else {
+            proposed.top = state.position;
+            proposed.mask |= 2U;
+        }
+        if ((proposed.mask & 3U) == 3U &&
+            ABS((int)proposed.bottom - (int)proposed.top) < 5) return false;
+    } else return false;
+    p3_cal = proposed;
+    atomic_set(&p3_cal_dirty, 1);
+    k_work_submit(&p3_cal_save_work);
+    p3_zcl_schedule_sync();
+    return true;
+}
+
 
 /* The programmable BLUE status LED is active-low at nRF52840 P0.15
  * on nice!nano-compatible boards. Do not touch charger LED hardware.
@@ -138,6 +238,14 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_RX_READY, &blind_ctx.diag_rx_ready,
 ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_STARTUP_SENT, &blind_ctx.diag_startup_requests_sent,
     ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_STARTUP_DONE, &blind_ctx.diag_startup_finished,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CAL_COMMAND, &blind_ctx.cal_command,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_WRITE_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CAL_BOTTOM, &blind_ctx.cal_bottom,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CAL_TOP, &blind_ctx.cal_top,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CAL_VALID, &blind_ctx.cal_valid,
     ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
@@ -308,10 +416,12 @@ static void apply_p3_zcl_state(zb_uint8_t dummy)
     blind_ctx.diag_rx_ready = diag.rx_ready;
     blind_ctx.diag_startup_requests_sent = diag.diag_startup_requests_sent;
     blind_ctx.diag_startup_finished = diag.diag_startup_finished;
+    blind_ctx.cal_bottom = (p3_cal.mask & 1U) ? p3_cal.bottom : 0xffU;
+    blind_ctx.cal_top = (p3_cal.mask & 2U) ? p3_cal.top : 0xffU;
+    blind_ctx.cal_valid = p3_cal_complete() ? 1U : 0U;
 
     if (IS_ENABLED(CONFIG_P3_ZCL_POSITION_ENABLE) && state.position_valid) {
-        value = IS_ENABLED(CONFIG_P3_ZCL_POSITION_INVERT) ?
-                (zb_uint8_t)(100U - state.position) : state.position;
+        value = p3_raw_to_zcl(state.position);
         ZB_ZCL_SET_ATTRIBUTE(BLIND_ENDPOINT, ZB_ZCL_CLUSTER_ID_WINDOW_COVERING,
             ZB_ZCL_CLUSTER_SERVER_ROLE,
             ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_LIFT_PERCENTAGE_ID,
@@ -366,6 +476,13 @@ static void covering_device_callback(zb_bufid_t bufid)
         return;
     }
     switch (param->device_cb_id) {
+    case ZB_ZCL_SET_ATTR_VALUE_CB_ID:
+        if (param->cb_param.set_attr_value_param.cluster_id == ZB_ZCL_CLUSTER_ID_BASIC &&
+            param->cb_param.set_attr_value_param.attr_id == P3_CAL_COMMAND) {
+            param->status = p3_cal_apply_command(
+                param->cb_param.set_attr_value_param.values.data8) ? RET_OK : RET_ERROR;
+        }
+        return;
     case ZB_ZCL_WINDOW_COVERING_UP_OPEN_CB_ID:
         action = TUYA_MOTOR_OPEN;
         queued = tuya_uart_submit_action(action);
@@ -393,10 +510,7 @@ static void covering_device_callback(zb_bufid_t bufid)
             param->status = RET_ERROR;
             return;
         }
-        percent = req->percentage_lift_value;
-        if (IS_ENABLED(CONFIG_P3_ZCL_POSITION_INVERT)) {
-            percent = (zb_uint8_t)(100U - percent);
-        }
+        percent = p3_zcl_to_raw(req->percentage_lift_value);
         queued = tuya_uart_submit_position(percent);
         LOG_INF("P3 position target ZCL=%u DP2=%u queued=%u",
                 req->percentage_lift_value, percent, queued);
@@ -464,6 +578,7 @@ int main(void)
         LOG_WRN("P3 status LED GPIO unavailable");
     }
 
+    p3_cal_load();
     ZB_AF_REGISTER_DEVICE_CTX(&blind_device_ctx);
     initialize_attributes();
     ZB_ZCL_REGISTER_DEVICE_CB(covering_device_callback);
