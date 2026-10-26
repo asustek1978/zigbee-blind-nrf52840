@@ -266,17 +266,32 @@ ZB_ZCL_DECLARE_SCENES_ATTRIB_LIST(
     &blind_ctx.scenes_attr.scene_valid,
     &blind_ctx.scenes_attr.name_support);
 
-ZB_ZCL_DECLARE_WINDOW_COVERING_CLUSTER_ATTRIB_LIST(
-    covering_attr_list,
-    &blind_ctx.covering_type,
-    &blind_ctx.covering_config_status,
-    &blind_ctx.position_lift_pct,
-    &blind_ctx.position_tilt_pct,
-    &blind_ctx.open_limit_lift,
-    &blind_ctx.closed_limit_lift,
-    &blind_ctx.open_limit_tilt,
-    &blind_ctx.closed_limit_tilt,
-    &blind_ctx.covering_mode);
+/* Build 36: advertise CURRENT_POSITION_LIFT_PERCENTAGE as reportable.
+ * The SDK's generic ZB_ZCL_SET_ATTR_DESC hides the reporting-access flag;
+ * explicit access enables coordinator ConfigureReporting -> change reports.
+ */
+ZB_ZCL_START_DECLARE_ATTRIB_LIST_CLUSTER_REVISION(covering_attr_list, ZB_ZCL_WINDOW_COVERING)
+ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_WINDOW_COVERING_WINDOW_COVERING_TYPE_ID,
+    &blind_ctx.covering_type)
+ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_WINDOW_COVERING_CONFIG_STATUS_ID,
+    &blind_ctx.covering_config_status)
+ZB_ZCL_SET_ATTR_DESC_M(
+    ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_LIFT_PERCENTAGE_ID,
+    &blind_ctx.position_lift_pct, ZB_ZCL_ATTR_TYPE_U8,
+    ZB_ZCL_ATTR_ACCESS_READ_ONLY | ZB_ZCL_ATTR_ACCESS_REPORTING)
+ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_TILT_PERCENTAGE_ID,
+    &blind_ctx.position_tilt_pct)
+ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_WINDOW_COVERING_INSTALLED_OPEN_LIMIT_LIFT_ID,
+    &blind_ctx.open_limit_lift)
+ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_WINDOW_COVERING_INSTALLED_CLOSED_LIMIT_LIFT_ID,
+    &blind_ctx.closed_limit_lift)
+ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_WINDOW_COVERING_INSTALLED_OPEN_LIMIT_TILT_ID,
+    &blind_ctx.open_limit_tilt)
+ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_WINDOW_COVERING_INSTALLED_CLOSED_LIMIT_TILT_ID,
+    &blind_ctx.closed_limit_tilt)
+ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_WINDOW_COVERING_MODE_ID,
+    &blind_ctx.covering_mode)
+ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 /* Read-only BatteryVoltage is deliberately unavailable (0xff). A voltage
  * was measured with a multimeter once, but that is not an ADC sensor.
