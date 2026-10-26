@@ -114,7 +114,8 @@ K_WORK_DEFINE(p3_cal_save_work, p3_cal_save_work_fn);
 static bool p3_cal_complete(void)
 {
     return (p3_cal.mask & 3U) == 3U &&
-        ABS((int)p3_cal.bottom - (int)p3_cal.top) >= 5;
+        ((int)p3_cal.bottom >= (int)p3_cal.top + 5 ||
+         (int)p3_cal.top >= (int)p3_cal.bottom + 5);
 }
 
 static zb_uint8_t p3_raw_to_zcl(zb_uint8_t raw)
