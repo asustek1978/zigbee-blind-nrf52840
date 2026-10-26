@@ -43,7 +43,7 @@ config P3_ZCL_POSITION_ENABLE
     default n
     help
       Enables Zigbee CurrentPositionLiftPercentage updates based on DP3.
-      Do not enable until DP3 and physical end-stop orientation are verified.
+      Use only after confirming DP3 is a valid 0..100 position.\n      Verify physical open/closed orientation before treating the value as\n      calibrated; reporting is read-only and cannot move the motor.
 
 config P3_ZCL_POSITION_INVERT
     bool "Invert DP3 lift percentage and Zigbee requested setpoint"

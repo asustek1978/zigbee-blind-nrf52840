@@ -120,14 +120,14 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Enforce build 31 diagnostic TX-only profile and blocked movement
+      - name: Enforce build 32 passive position reporting and blocked movement
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           cfg=build-nicenano/zephyr/.config
           grep '^CONFIG_ZIGBEE_ROLE_END_DEVICE=y' "$cfg"
           grep '^CONFIG_USE_DT_CODE_PARTITION=y' "$cfg"
-          for opt in P3_UART_TX_ENABLE P3_MCU_INIT_ENABLE P3_ZCL_POSITION_ENABLE P3_ZCL_POSITION_INVERT P3_ZCL_BATTERY_ENABLE; do
+          for opt in P3_UART_TX_ENABLE P3_MCU_INIT_ENABLE P3_DIAG_STARTUP_QUERIES P3_ZCL_POSITION_INVERT P3_ZCL_BATTERY_ENABLE; do
             if grep -qx "CONFIG_${opt}=y" "$cfg"; then
               echo "::error::Unsafe default: CONFIG_${opt} enabled"
               exit 1
@@ -142,8 +142,8 @@ jobs:
               }
             fi
           done
-          grep -qx '^CONFIG_P3_DIAG_STARTUP_QUERIES=y' "$cfg"
-          echo "BUILD 31 PASS: only 4 allowlisted non-movement UART requests; cover TX blocked."
+          grep -qx '^CONFIG_P3_ZCL_POSITION_ENABLE=y' "$cfg"
+          echo "BUILD 32 PASS: passive DP3 position reporting; all motor UART TX disabled."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -200,50 +200,40 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-build31.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-build32.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-build31.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-build31.uf2
+            sha256sum P3-NRF52840-build32.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-build32.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-build31.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-build32.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840-build31.uf2 — EXPERIMENTAL ONE-TIME P3 UART TX BENCH BUILD
+          P3-NRF52840-build32.uf2 — PASSIVE TUYA DP3 POSITION OVER ZIGBEE
 
           Target: HW-954 nRF52840 nice!nano-compatible clone,
           UF2 Bootloader 0.6.0, SoftDevice S140 v6.1.1.
           Zigbee: Sleepy End Device, Window Covering cluster 0x0102, endpoint 10.
 
           THIS FILE IS NOT THE BOOTLOADER. It contains application bytes only.
-          MOTOR MOVEMENT is DISABLED. This image nevertheless PHYSICALLY
-          TRANSMITS four captured NON-MOVEMENT Tuya P3 UART requests once
-          after RX initialization: heartbeat 0x00, product 0x01,
-          work mode 0x02, DP state query 0x08. No retries, motion
-          commands, position targets or Zigbee-triggered motor TX.
-          Speculative ZCL position and battery mapping remain disabled.
-          The fourth service request sequence is NOT electrically isolated.
+          MOTOR MOVEMENT and ALL UART TX are DISABLED. No startup service\n          requests; receives only Tuya DP3 reports at 9600 8N1.
 
           WARNING: Compiled and statically validated, but NOT yet boot-tested
           on the physical HW-954 clone. Do not connect motor or P3 battery
-          during USB flashing. Before connecting UART TX P0.20 to P3 TX,
-          physically verify power isolation and nonconflicting 3.3V levels,
-          with common signal GND. DO NOT flash while the P3 motor circuit
-          and USB/battery power are connected. Service commands are NOT
-          proven motion-free on every P3 firmware variant.
+          during USB flashing. Do not connect P0.20 UART TX; this is RX-only firmware.\n          Connect only previously scope-verified P3 data output to nRF P0.17 RX\n          with common signal GND and compatible 3.3V levels.\n          Confirm DP3 physical direction before interpreting cover position.
 
           Check SHA256SUMS.txt. Reset into UF2 mode before copying the .uf2.
           If the new application fails, the original UF2 loader may still
           be reachable by double-reset; SWD recovery is the reliable fallback.
           EOF
 
-      - name: Upload build 31 startup diagnostic UF2
+      - name: Upload build 32 passive position UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-build31-startup-UF2
+          name: P3-NRF52840-build32-position-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
