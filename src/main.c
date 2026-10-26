@@ -106,6 +106,7 @@ static atomic_t p3_update_pending;
 struct p3_calibration { zb_uint8_t bottom, top, mask, magic; };
 static struct p3_calibration p3_cal;
 #define P3_CAL_MAGIC 0x36U
+void p3_zcl_schedule_sync(void);
 static atomic_t p3_cal_dirty;
 static void p3_cal_save_work_fn(struct k_work *work);
 K_WORK_DEFINE(p3_cal_save_work, p3_cal_save_work_fn);
