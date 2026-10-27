@@ -120,7 +120,7 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Enforce build 36 motor, positioning and persistent calibration
+      - name: Enforce build 37 motor, positioning and hardware calibration
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
@@ -149,7 +149,9 @@ jobs:
           grep -q 'tuya_uart_submit_position(percent)' app/src/main.c
           grep -qx '^CONFIG_SETTINGS=y' "$cfg"
           grep -qx '^CONFIG_SETTINGS_NVS=y' "$cfg"
-          echo "BUILD 36 PASS: OPEN/CLOSE/STOP, DP2 percentage setpoint, DP3 feedback and DP13 battery enabled."
+          grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"
+          grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
+          echo "BUILD 37 PASS: OPEN/CLOSE/STOP, DP2 percentage setpoint, DP3 feedback and DP13 battery enabled."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -206,18 +208,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-build36.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-build37.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-build36.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-build36.uf2
+            sha256sum P3-NRF52840-build37.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-build37.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-build36.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-build37.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840-build36.uf2 — MOTOR CONTROL AND PROVISIONAL DP13 BATTERY
+          P3-NRF52840-build37.uf2 — MOTOR CONTROL AND PROVISIONAL DP13 BATTERY
 
           Target: HW-954 nRF52840 nice!nano-compatible clone.
           Zigbee: End Device, endpoint 10; DP3 RX position reporting retained.
@@ -240,11 +242,11 @@ jobs:
           be reachable by double-reset; SWD recovery is the reliable fallback.
           EOF
 
-      - name: Upload build 36 persistent calibration UF2
+      - name: Upload build 37 hardware calibration UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-build36-calibration-UF2
+          name: P3-NRF52840-build37-hardware-calibration-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
