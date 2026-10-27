@@ -121,7 +121,7 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Enforce build 41.2 motor, positioning and hardware calibration
+      - name: Enforce build 41.3 motor, positioning and hardware calibration
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
@@ -132,6 +132,7 @@ jobs:
           grep -q 'P3_BUTTON_PRESS_COUNT 0xF119U' app/src/main.c
           grep -q 'P3_BUTTON_LAST_EVENT 0xF11AU' app/src/main.c
           grep -q 'P3_LOCAL_FINISH_TX_DELAY_MS 0xF11EU' app/src/main.c
+          grep -q 'tuya_motor_encode_action(TUYA_MOTOR_STOP' app/src/tuya_uart.c
           grep '^CONFIG_USE_DT_CODE_PARTITION=y' "$cfg"
           for opt in P3_MCU_INIT_ENABLE P3_DIAG_STARTUP_QUERIES P3_ZCL_POSITION_INVERT; do
             if grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -157,7 +158,7 @@ jobs:
           grep -qx '^CONFIG_SETTINGS_NVS=y' "$cfg"
           grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
-          echo "BUILD 41.2 PASS: OPEN/CLOSE/STOP, DP2 percentage setpoint, DP3 feedback and DP13 battery enabled."
+          echo "BUILD 41.3 PASS: OPEN/CLOSE/STOP, DP2 percentage setpoint, DP3 feedback and DP13 battery enabled."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -214,18 +215,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-build41-2.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-build41-3.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-build41-2.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-build41-2.uf2
+            sha256sum P3-NRF52840-build41-3.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-build41-3.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-build41-2.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-build41-3.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840-build41-2.uf2 — MOTOR CONTROL AND PROVISIONAL DP13 BATTERY
+          P3-NRF52840-build41-3.uf2 — MOTOR CONTROL AND PROVISIONAL DP13 BATTERY
 
           Target: HW-954 nRF52840 nice!nano-compatible clone.
           Zigbee: End Device, endpoint 10; DP3 RX position reporting retained.
@@ -252,7 +253,7 @@ jobs:
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-build41-2-local-button-diagnostics-UF2
+          name: P3-NRF52840-build41-3-local-button-diagnostics-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
