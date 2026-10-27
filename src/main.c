@@ -592,6 +592,7 @@ static void p3_cal_button_thread(void *a, void *b, void *c)
     uint32_t candidate_since = 0U, press_start = 0U, last_release = 0U;
     uint8_t clicks = 0U;
     bool finish_on_press = false;
+    bool training_motion_started = false;
     ARG_UNUSED(a); ARG_UNUSED(b); ARG_UNUSED(c);
     /* Initial delay lets the board and input settle before reading. */
     while (!atomic_get(&p3_cal_button_ready)) k_msleep(50);
@@ -617,15 +618,31 @@ static void p3_cal_button_thread(void *a, void *b, void *c)
                 if (finish_on_press) {
                     clicks = 0U;
                     /* Most time-sensitive action: never wait for multiclick. */
-                    atomic_inc(&p3_local_finish_presses);
-                    if (p3_hw_cal_phase == 2U && tuya_uart_submit_local_finish()) {
+                    /* Bench finding: double-click DP102=0 arms training,
+                     * an additional press DP102=1 starts the motor,
+                     * then ordinary DP1 STOP stops and stores position.
+                     * Never auto-append DP102=1 to STOP.
+                     */
+                    if (!training_motion_started) {
+                        if (tuya_uart_submit_hw_calibration(3U)) {
+                            training_motion_started = true;
+                            p3_button_event(8U); /* movement-start sequence */
+                            LOG_INF("P3 LOCAL training motion trigger DP102=1 queued");
+                        } else {
+                            p3_button_event(6U);
+                        }
+                    } else {
+                        atomic_inc(&p3_local_finish_presses);
+                        if (tuya_uart_submit_local_finish()) {
                         p3_hw_cal_phase = 0U;
                         p3_zcl_schedule_sync();
                         p3_button_event(5U);
-                        LOG_INF("P3 LOCAL finish/save queued immediately");
-                    } else {
-                        p3_button_event(6U);
-                        LOG_ERR("P3 local finish rejected; disconnect power if moving");
+                        LOG_INF("P3 LOCAL ordinary DP1 STOP queued");
+                        training_motion_started = false;
+                        } else {
+                            p3_button_event(6U);
+                            LOG_ERR("P3 local STOP rejected; disconnect power if moving");
+                        }
                     }
                 }
             } else {
@@ -636,6 +653,7 @@ static void p3_cal_button_thread(void *a, void *b, void *c)
                          * live training; pressing during training already
                          * finishes on the first edge. */
                         if (p3_hw_cal_execute(1U)) {
+                            training_motion_started = false;
                             p3_button_event(4U);
                             LOG_WRN("P3 LOCAL motor endpoints RESET");
                         } else {
@@ -653,7 +671,10 @@ static void p3_cal_button_thread(void *a, void *b, void *c)
         }
         if (!stable_pressed && clicks && (uint32_t)(now - last_release) >= 450U) {
             if (clicks == 2U && p3_hw_cal_phase == 1U) {
-                if (p3_hw_cal_execute(2U)) p3_button_event(3U);
+                if (p3_hw_cal_execute(2U)) {
+                    training_motion_started = false;
+                    p3_button_event(3U);
+                }
                 else p3_button_event(6U);
             } else if (clicks == 1U) {
                 p3_button_event(2U);
