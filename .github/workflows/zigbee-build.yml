@@ -11,6 +11,7 @@ on:
       - 'tools/**'
       - 'include/**'
       - 'boards/**'
+      - 'app.overlay'
       - 'Kconfig'
       - 'zigbee2mqtt/**'
       - 'prj.conf'
@@ -120,14 +121,16 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Enforce build 41 motor, positioning and hardware calibration
+      - name: Enforce build 41.1 motor, positioning and hardware calibration
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           cfg=build-nicenano/zephyr/.config
           grep '^CONFIG_ZIGBEE_ROLE_END_DEVICE=y' "$cfg"
           grep -q 'calibration-button' app/app.overlay
-          grep -q 'P3 LOCAL instant finish/save queued' app/src/main.c
+          grep -q 'P3 LOCAL finish/save queued immediately' app/src/main.c
+          grep -q 'P3_BUTTON_PRESS_COUNT 0xF119U' app/src/main.c
+          grep -q 'P3_BUTTON_LAST_EVENT 0xF11AU' app/src/main.c
           grep '^CONFIG_USE_DT_CODE_PARTITION=y' "$cfg"
           for opt in P3_MCU_INIT_ENABLE P3_DIAG_STARTUP_QUERIES P3_ZCL_POSITION_INVERT; do
             if grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -153,7 +156,7 @@ jobs:
           grep -qx '^CONFIG_SETTINGS_NVS=y' "$cfg"
           grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
-          echo "BUILD 41 PASS: OPEN/CLOSE/STOP, DP2 percentage setpoint, DP3 feedback and DP13 battery enabled."
+          echo "BUILD 41.1 PASS: OPEN/CLOSE/STOP, DP2 percentage setpoint, DP3 feedback and DP13 battery enabled."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
