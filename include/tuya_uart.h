@@ -12,6 +12,7 @@
  * True means accepted into a bounded UART queue, NOT physical completion.
  * Never auto-issue movement on boot or Zigbee network join.
  */
+void tuya_uart_mark_zigbee_command(void);
 bool tuya_uart_submit_action(enum tuya_motor_action action);
 bool tuya_uart_submit_position(uint8_t percent);
 bool tuya_uart_submit_hw_calibration(uint8_t command);
@@ -23,6 +24,8 @@ void tuya_uart_get_state(struct tuya_motor_state *out);
 struct tuya_uart_diagnostics {
     uint32_t rx_bytes;
     uint32_t tx_frames;
+    uint32_t zigbee_commands;
+    uint32_t last_zigbee_to_tx_ms;
     uint32_t last_queue_to_tx_ms;
     uint32_t last_uart_tx_ms;
     uint32_t last_rx_after_tx_ms;
