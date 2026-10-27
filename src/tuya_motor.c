@@ -55,6 +55,23 @@ size_t tuya_motor_encode_position(uint8_t percent,
     return tuya_encode(&packet, out, capacity);
 }
 
+size_t tuya_motor_encode_hw_calibration(uint8_t command,
+                                       uint8_t *out, size_t capacity)
+{
+    struct tuya_frame packet = {0};
+    if (!out || command < 1U || command > 3U) return 0U;
+    packet.format = TUYA_WIRE_CLASSIC;
+    packet.version = 0U;
+    packet.command = TUYA_CLASSIC_CONTROL_COMMAND;
+    packet.length = 5U;
+    packet.data[0] = (command == 1U) ? 0x6bU : 0x66U;
+    packet.data[1] = TUYA_TYPE_ENUM;
+    packet.data[2] = 0U;
+    packet.data[3] = 1U;
+    packet.data[4] = (command == 3U) ? 1U : 0U;
+    return tuya_encode(&packet, out, capacity);
+}
+
 size_t tuya_motor_encode_request(enum tuya_motor_request request,
                                  uint8_t *out, size_t capacity)
 {
