@@ -36,6 +36,8 @@ const diagnosticAttrs = {
     p3_uart_queue_to_tx_ms: 0xf114,
     p3_uart_tx_duration_ms: 0xf115,
     p3_uart_rx_after_tx_ms: 0xf116,
+    p3_zigbee_commands: 0xf117,
+    p3_zigbee_callback_to_tx_ms: 0xf118,
 };
 
 const p3DiagnosticsFromZigbee = {
@@ -47,7 +49,7 @@ const p3DiagnosticsFromZigbee = {
             const raw = msg.data[id] ?? msg.data[String(id)] ?? msg.data[`0x${id.toString(16)}`];
             if (typeof raw !== 'number') continue;
             // 0xFF explicitly represents "not observed" for these fields.
-            result[key] = (key === 'p3_uart_rx_after_tx_ms' && raw === 4294967295) ? null : (['p3_dp1_raw', 'p3_dp3_raw', 'p3_dp13_raw', 'p3_cal_bottom_raw', 'p3_cal_top_raw',
+            result[key] = (['p3_uart_rx_after_tx_ms', 'p3_zigbee_callback_to_tx_ms'].includes(key) && raw === 4294967295) ? null : (['p3_dp1_raw', 'p3_dp3_raw', 'p3_dp13_raw', 'p3_cal_bottom_raw', 'p3_cal_top_raw',
                             'p3_uart_last_command', 'p3_uart_last_format'].includes(key)
                             && raw === 255) ? null : raw;
         }
