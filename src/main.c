@@ -52,6 +52,10 @@
 #define P3_CAL_VALID 0xF110U
 #define P3_HW_CAL_COMMAND 0xF111U /* 1 reset, 2 start, 3 finish */
 #define P3_HW_CAL_PHASE 0xF112U /* 0 idle, 1 reset, 2 training */
+#define P3_DIAG_TX_FRAMES 0xF113U
+#define P3_DIAG_QUEUE_TO_TX_MS 0xF114U
+#define P3_DIAG_UART_TX_MS 0xF115U
+#define P3_DIAG_RX_AFTER_TX_MS 0xF116U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -76,6 +80,10 @@ struct blind_device_context {
 
     /* Raw, volatile UART receiver diagnostics (Basic 0xF100..0xF10A). */
     zb_uint32_t diag_rx_bytes;
+    zb_uint32_t diag_tx_frames;
+    zb_uint32_t diag_queue_to_tx_ms;
+    zb_uint32_t diag_uart_tx_ms;
+    zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
     zb_uint32_t diag_rejected_frames;
     zb_uint32_t diag_dropped_bytes;
@@ -259,6 +267,14 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_HW_CAL_COMMAND, &blind_ctx.hw_cal_command,
     ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_WRITE_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_HW_CAL_PHASE, &blind_ctx.hw_cal_phase,
     ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_TX_FRAMES, &blind_ctx.diag_tx_frames,
+    ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_QUEUE_TO_TX_MS, &blind_ctx.diag_queue_to_tx_ms,
+    ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_UART_TX_MS, &blind_ctx.diag_uart_tx_ms,
+    ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_RX_AFTER_TX_MS, &blind_ctx.diag_rx_after_tx_ms,
+    ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -431,6 +447,10 @@ static void apply_p3_zcl_state(zb_uint8_t dummy)
      * Every value is read-only and obtainable with standard ZCL Read.
      */
     blind_ctx.diag_rx_bytes = diag.rx_bytes;
+    blind_ctx.diag_tx_frames = diag.tx_frames;
+    blind_ctx.diag_queue_to_tx_ms = diag.last_queue_to_tx_ms;
+    blind_ctx.diag_uart_tx_ms = diag.last_uart_tx_ms;
+    blind_ctx.diag_rx_after_tx_ms = diag.last_rx_after_tx_ms;
     blind_ctx.diag_valid_frames = diag.valid_frames;
     blind_ctx.diag_rejected_frames = diag.rejected_frames;
     blind_ctx.diag_dropped_bytes = diag.dropped_bytes;
