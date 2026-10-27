@@ -60,6 +60,10 @@
 #define P3_ZB_CALLBACK_TO_TX_MS 0xF118U
 #define P3_BUTTON_PRESS_COUNT 0xF119U
 #define P3_BUTTON_LAST_EVENT 0xF11AU
+#define P3_LOCAL_FINISH_PRESSES 0xF11BU
+#define P3_LOCAL_FINISH_QUEUED 0xF11CU
+#define P3_LOCAL_FINISH_TX 0xF11DU
+#define P3_LOCAL_FINISH_TX_DELAY_MS 0xF11EU
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -88,6 +92,10 @@ struct blind_device_context {
     zb_uint32_t diag_zigbee_commands;
     zb_uint32_t diag_button_press_count;
     zb_uint8_t diag_button_last_event;
+    zb_uint32_t diag_local_finish_presses;
+    zb_uint32_t diag_local_finish_queued;
+    zb_uint32_t diag_local_finish_tx;
+    zb_uint32_t diag_local_finish_tx_delay_ms;
     zb_uint32_t diag_zigbee_to_tx_ms;
     zb_uint32_t diag_queue_to_tx_ms;
     zb_uint32_t diag_uart_tx_ms;
@@ -121,6 +129,7 @@ static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
 static atomic_t p3_button_press_count;
 static atomic_t p3_button_last_event;
+static atomic_t p3_local_finish_presses;
 
 /* Software travel endpoints in raw DP3 units, NOT hardware limit programming.
  * mask bit 0 = bottom, bit 1 = top. Minimum span 5%.
@@ -294,6 +303,10 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_BUTTON_PRESS_COUNT, &blind_ctx.diag_button_press_count
     ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_BUTTON_LAST_EVENT, &blind_ctx.diag_button_last_event,
     ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_LOCAL_FINISH_PRESSES, &blind_ctx.diag_local_finish_presses, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_LOCAL_FINISH_QUEUED, &blind_ctx.diag_local_finish_queued, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_LOCAL_FINISH_TX, &blind_ctx.diag_local_finish_tx, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_LOCAL_FINISH_TX_DELAY_MS, &blind_ctx.diag_local_finish_tx_delay_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -470,6 +483,10 @@ static void apply_p3_zcl_state(zb_uint8_t dummy)
     blind_ctx.diag_zigbee_commands = diag.zigbee_commands;
     blind_ctx.diag_button_press_count = (zb_uint32_t)atomic_get(&p3_button_press_count);
     blind_ctx.diag_button_last_event = (zb_uint8_t)atomic_get(&p3_button_last_event);
+    blind_ctx.diag_local_finish_presses = (zb_uint32_t)atomic_get(&p3_local_finish_presses);
+    blind_ctx.diag_local_finish_queued = diag.local_finish_queued;
+    blind_ctx.diag_local_finish_tx = diag.local_finish_transmitted;
+    blind_ctx.diag_local_finish_tx_delay_ms = diag.local_finish_queue_to_tx_ms;
     blind_ctx.diag_zigbee_to_tx_ms = diag.last_zigbee_to_tx_ms;
     blind_ctx.diag_queue_to_tx_ms = diag.last_queue_to_tx_ms;
     blind_ctx.diag_uart_tx_ms = diag.last_uart_tx_ms;
@@ -600,7 +617,10 @@ static void p3_cal_button_thread(void *a, void *b, void *c)
                 if (finish_on_press) {
                     clicks = 0U;
                     /* Most time-sensitive action: never wait for multiclick. */
-                    if (p3_hw_cal_execute(3U)) {
+                    atomic_inc(&p3_local_finish_presses);
+                    if (p3_hw_cal_phase == 2U && tuya_uart_submit_local_finish()) {
+                        p3_hw_cal_phase = 0U;
+                        p3_zcl_schedule_sync();
                         p3_button_event(5U);
                         LOG_INF("P3 LOCAL finish/save queued immediately");
                     } else {
