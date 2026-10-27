@@ -32,6 +32,7 @@ static atomic_t rx_dropped;
 static atomic_t rx_dropped_total;
 static atomic_t rx_bytes_total;
 static atomic_t uart_ready;
+static atomic_t pending_zigbee_timestamp;
 static atomic_t last_tx_ms;
 static atomic_t waiting_for_response;
 static atomic_t diag_startup_requests_sent;
@@ -57,6 +58,7 @@ struct p3_tx_msg {
     uint8_t bytes[P3_TX_FRAME_CAP];
     uint8_t length;
     uint32_t queued_at_ms;
+    uint32_t zigbee_at_ms;
 };
 
 K_MSGQ_DEFINE(p3_tx_queue, sizeof(struct p3_tx_msg), P3_TX_QUEUE_DEPTH, 4);
@@ -91,6 +93,15 @@ void tuya_uart_get_diagnostics(struct tuya_uart_diagnostics *out)
         (uint8_t)atomic_get(&diag_startup_finished);
 }
 
+void tuya_uart_mark_zigbee_command(void)
+{
+    atomic_set(&pending_zigbee_timestamp, (atomic_val_t)k_uptime_get_32());
+    k_mutex_lock(&p3_diag_mutex, K_FOREVER);
+    p3_diag.zigbee_commands++;
+    k_mutex_unlock(&p3_diag_mutex);
+    p3_zcl_schedule_sync();
+}
+
 static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
 {
     struct p3_tx_msg msg = {0};
@@ -104,6 +115,7 @@ static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
     memcpy(msg.bytes, bytes, length);
     msg.length = (uint8_t)length;
     msg.queued_at_ms = k_uptime_get_32();
+    msg.zigbee_at_ms = (uint32_t)atomic_set(&pending_zigbee_timestamp, 0);
 
     /* STOP drops any outstanding future requests; current transmission
      * cannot be interrupted byte-for-byte, but never retry/loop commands.
@@ -350,6 +362,8 @@ static void transmit_main(void *a, void *b, void *c)
         const uint32_t tx_done = k_uptime_get_32();
         k_mutex_lock(&p3_diag_mutex, K_FOREVER);
         p3_diag.tx_frames++;
+        p3_diag.last_zigbee_to_tx_ms = frame.zigbee_at_ms ?
+            tx_started - frame.zigbee_at_ms : UINT32_MAX;
         p3_diag.last_queue_to_tx_ms = tx_started - frame.queued_at_ms;
         p3_diag.last_uart_tx_ms = tx_done - tx_started;
         p3_diag.last_rx_after_tx_ms = UINT32_MAX;
