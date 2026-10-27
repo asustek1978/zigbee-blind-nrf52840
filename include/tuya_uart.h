@@ -25,6 +25,9 @@ struct tuya_uart_diagnostics {
     uint32_t rx_bytes;
     uint32_t tx_frames;
     uint32_t zigbee_commands;
+    uint32_t local_finish_queued;
+    uint32_t local_finish_transmitted;
+    uint32_t local_finish_queue_to_tx_ms;
     uint32_t last_zigbee_to_tx_ms;
     uint32_t last_queue_to_tx_ms;
     uint32_t last_uart_tx_ms;
@@ -41,5 +44,6 @@ struct tuya_uart_diagnostics {
 };
 
 void tuya_uart_get_diagnostics(struct tuya_uart_diagnostics *out);
+bool tuya_uart_submit_local_finish(void);
 
 #endif
