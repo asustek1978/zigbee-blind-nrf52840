@@ -56,6 +56,8 @@
 #define P3_DIAG_QUEUE_TO_TX_MS 0xF114U
 #define P3_DIAG_UART_TX_MS 0xF115U
 #define P3_DIAG_RX_AFTER_TX_MS 0xF116U
+#define P3_ZB_COMMANDS 0xF117U
+#define P3_ZB_CALLBACK_TO_TX_MS 0xF118U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -81,6 +83,8 @@ struct blind_device_context {
     /* Raw, volatile UART receiver diagnostics (Basic 0xF100..0xF10A). */
     zb_uint32_t diag_rx_bytes;
     zb_uint32_t diag_tx_frames;
+    zb_uint32_t diag_zigbee_commands;
+    zb_uint32_t diag_zigbee_to_tx_ms;
     zb_uint32_t diag_queue_to_tx_ms;
     zb_uint32_t diag_uart_tx_ms;
     zb_uint32_t diag_rx_after_tx_ms;
@@ -275,6 +279,10 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_UART_TX_MS, &blind_ctx.diag_uart_tx_ms,
     ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_RX_AFTER_TX_MS, &blind_ctx.diag_rx_after_tx_ms,
     ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_ZB_COMMANDS, &blind_ctx.diag_zigbee_commands,
+    ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_ZB_CALLBACK_TO_TX_MS, &blind_ctx.diag_zigbee_to_tx_ms,
+    ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -448,6 +456,8 @@ static void apply_p3_zcl_state(zb_uint8_t dummy)
      */
     blind_ctx.diag_rx_bytes = diag.rx_bytes;
     blind_ctx.diag_tx_frames = diag.tx_frames;
+    blind_ctx.diag_zigbee_commands = diag.zigbee_commands;
+    blind_ctx.diag_zigbee_to_tx_ms = diag.last_zigbee_to_tx_ms;
     blind_ctx.diag_queue_to_tx_ms = diag.last_queue_to_tx_ms;
     blind_ctx.diag_uart_tx_ms = diag.last_uart_tx_ms;
     blind_ctx.diag_rx_after_tx_ms = diag.last_rx_after_tx_ms;
@@ -558,14 +568,17 @@ static void covering_device_callback(zb_bufid_t bufid)
         return;
     case ZB_ZCL_WINDOW_COVERING_UP_OPEN_CB_ID:
         action = TUYA_MOTOR_OPEN;
+        tuya_uart_mark_zigbee_command();
         queued = tuya_uart_submit_action(action);
         break;
     case ZB_ZCL_WINDOW_COVERING_DOWN_CLOSE_CB_ID:
         action = TUYA_MOTOR_CLOSE;
+        tuya_uart_mark_zigbee_command();
         queued = tuya_uart_submit_action(action);
         break;
     case ZB_ZCL_WINDOW_COVERING_STOP_CB_ID:
         action = TUYA_MOTOR_STOP;
+        tuya_uart_mark_zigbee_command();
         queued = tuya_uart_submit_action(action);
         break;
     case ZB_ZCL_WINDOW_COVERING_GO_TO_LIFT_PERCENTAGE_CB_ID: {
@@ -584,6 +597,7 @@ static void covering_device_callback(zb_bufid_t bufid)
             return;
         }
         percent = p3_zcl_to_raw(req->percentage_lift_value);
+        tuya_uart_mark_zigbee_command();
         queued = tuya_uart_submit_position(percent);
         LOG_INF("P3 position target ZCL=%u DP2=%u queued=%u",
                 req->percentage_lift_value, percent, queued);
