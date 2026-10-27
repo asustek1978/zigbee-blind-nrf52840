@@ -32,6 +32,8 @@ static atomic_t rx_dropped;
 static atomic_t rx_dropped_total;
 static atomic_t rx_bytes_total;
 static atomic_t uart_ready;
+static atomic_t last_tx_ms;
+static atomic_t waiting_for_response;
 static atomic_t diag_startup_requests_sent;
 static atomic_t diag_startup_finished;
 K_SEM_DEFINE(p3_uart_rx_started, 0, 1);
@@ -54,6 +56,7 @@ static struct tuya_uart_diagnostics p3_diag = {
 struct p3_tx_msg {
     uint8_t bytes[P3_TX_FRAME_CAP];
     uint8_t length;
+    uint32_t queued_at_ms;
 };
 
 K_MSGQ_DEFINE(p3_tx_queue, sizeof(struct p3_tx_msg), P3_TX_QUEUE_DEPTH, 4);
@@ -100,6 +103,7 @@ static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
 
     memcpy(msg.bytes, bytes, length);
     msg.length = (uint8_t)length;
+    msg.queued_at_ms = k_uptime_get_32();
 
     /* STOP drops any outstanding future requests; current transmission
      * cannot be interrupted byte-for-byte, but never retry/loop commands.
@@ -251,6 +255,11 @@ static void receive_main(void *a, void *b, void *c)
         k_msgq_get(&p3_rx_queue, &byte, K_FOREVER);
         atomic_inc(&rx_bytes_total);
         if (tuya_parser_feed(&parser, byte, &frame)) {
+            if (atomic_cas(&waiting_for_response, 1, 0)) {
+                k_mutex_lock(&p3_diag_mutex, K_FOREVER);
+                p3_diag.last_rx_after_tx_ms = k_uptime_get_32() - (uint32_t)atomic_get(&last_tx_ms);
+                k_mutex_unlock(&p3_diag_mutex);
+            }
             k_mutex_lock(&p3_diag_mutex, K_FOREVER);
             p3_diag.valid_frames++;
             p3_diag.last_command = frame.command;
@@ -330,6 +339,7 @@ static void transmit_main(void *a, void *b, void *c)
             continue;
         }
 
+        const uint32_t tx_started = k_uptime_get_32();
         for (size_t i = 0; i < frame.length; ++i) {
             /* uart_poll_out() transmits a byte, without retransmission.
              * Original WBR3/P3 startup and acknowledgments require testing.
@@ -337,7 +347,21 @@ static void transmit_main(void *a, void *b, void *c)
             uart_poll_out(motor_uart, frame.bytes[i]);
         }
 
-        LOG_INF("P3 frame sent cmd=0x%02x (not confirmed by motor)",
+        const uint32_t tx_done = k_uptime_get_32();
+        k_mutex_lock(&p3_diag_mutex, K_FOREVER);
+        p3_diag.tx_frames++;
+        p3_diag.last_queue_to_tx_ms = tx_started - frame.queued_at_ms;
+        p3_diag.last_uart_tx_ms = tx_done - tx_started;
+        p3_diag.last_rx_after_tx_ms = UINT32_MAX;
+        k_mutex_unlock(&p3_diag_mutex);
+        atomic_set(&last_tx_ms, (atomic_val_t)tx_done);
+        atomic_set(&waiting_for_response, 1);
+        p3_zcl_schedule_sync();
+        LOG_INF("P3 tx completed: queue=%u ms uart=%u ms cmd=0x%02x (no MCU ack guaranteed)",
+                (unsigned)(tx_started - frame.queued_at_ms),
+                (unsigned)(tx_done - tx_started),
+                frame.length > 3U ? frame.bytes[3] : 0U);
+        LOG_DBG("P3 frame sent cmd=0x%02x (not confirmed by motor)",
                 frame.length > 3U ? frame.bytes[3] : 0U);
     }
 }
