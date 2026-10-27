@@ -32,6 +32,10 @@ const diagnosticAttrs = {
     p3_cal_top_raw: 0xf10f,
     p3_cal_valid: 0xf110,
     p3_hw_cal_phase: 0xf112,
+    p3_uart_tx_frames: 0xf113,
+    p3_uart_queue_to_tx_ms: 0xf114,
+    p3_uart_tx_duration_ms: 0xf115,
+    p3_uart_rx_after_tx_ms: 0xf116,
 };
 
 const p3DiagnosticsFromZigbee = {
@@ -43,9 +47,9 @@ const p3DiagnosticsFromZigbee = {
             const raw = msg.data[id] ?? msg.data[String(id)] ?? msg.data[`0x${id.toString(16)}`];
             if (typeof raw !== 'number') continue;
             // 0xFF explicitly represents "not observed" for these fields.
-            result[key] = (['p3_dp1_raw', 'p3_dp3_raw', 'p3_dp13_raw', 'p3_cal_bottom_raw', 'p3_cal_top_raw',
+            result[key] = (key === 'p3_uart_rx_after_tx_ms' && raw === 4294967295) ? null : (['p3_dp1_raw', 'p3_dp3_raw', 'p3_dp13_raw', 'p3_cal_bottom_raw', 'p3_cal_top_raw',
                             'p3_uart_last_command', 'p3_uart_last_format'].includes(key)
-                            && raw === 255) ? null : raw;
+                            && raw === 255) ? null : raw);
         }
         return result;
     },
@@ -97,7 +101,8 @@ const p3DiagnosticsRefresh = {
         // p3_diagnostics_refresh MQTT API. Neither request sends motor UART.
         const ids = Object.values(diagnosticAttrs);
         await entity.read('genBasic', ids.slice(0, 8));
-        await entity.read('genBasic', ids.slice(8));
+        await entity.read('genBasic', ids.slice(8, 16));
+        await entity.read('genBasic', ids.slice(16));
     },
 };
 
