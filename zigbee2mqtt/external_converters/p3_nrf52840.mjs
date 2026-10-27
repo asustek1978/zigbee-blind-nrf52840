@@ -117,7 +117,7 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'Battery-powered Tuya P3 roller blind on nice!nano nRF52840 (prototype)',
+    description: 'Battery-powered Tuya P3 roller blind on nice!nano nRF52840 (prototype; local button 41.3)',
     fromZigbee: [fz.cover_position_tilt, fz.battery, p3DiagnosticsFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, p3DiagnosticsRefresh, p3Calibration, p3HardwareCalibration],
     exposes: [
