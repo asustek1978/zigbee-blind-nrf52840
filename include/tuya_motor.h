@@ -24,6 +24,14 @@ size_t tuya_motor_encode_action(enum tuya_motor_action action,
 size_t tuya_motor_encode_position(uint8_t percent,
                                   uint8_t *out, size_t capacity);
 
+/* Hardware calibration protocol captured from original WBR3 UART.
+ * 1=reset limits (DP107=0); 2=start automatic training (DP102=0);
+ * 3=finish and store upper limit (DP102=1).
+ * Encodes only; does not transmit.
+ */
+size_t tuya_motor_encode_hw_calibration(uint8_t command,
+                                       uint8_t *out, size_t capacity);
+
 /* Original WBR3 -> P3 startup requests captured on motor wake.
  * These encoders NEVER send data; transmission stays gated by Kconfig.
  */
