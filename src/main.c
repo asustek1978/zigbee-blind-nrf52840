@@ -58,6 +58,8 @@
 #define P3_DIAG_RX_AFTER_TX_MS 0xF116U
 #define P3_ZB_COMMANDS 0xF117U
 #define P3_ZB_CALLBACK_TO_TX_MS 0xF118U
+#define P3_BUTTON_PRESS_COUNT 0xF119U
+#define P3_BUTTON_LAST_EVENT 0xF11AU
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -84,6 +86,8 @@ struct blind_device_context {
     zb_uint32_t diag_rx_bytes;
     zb_uint32_t diag_tx_frames;
     zb_uint32_t diag_zigbee_commands;
+    zb_uint32_t diag_button_press_count;
+    zb_uint8_t diag_button_last_event;
     zb_uint32_t diag_zigbee_to_tx_ms;
     zb_uint32_t diag_queue_to_tx_ms;
     zb_uint32_t diag_uart_tx_ms;
@@ -283,6 +287,10 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_ZB_COMMANDS, &blind_ctx.diag_zigbee_commands,
     ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_ZB_CALLBACK_TO_TX_MS, &blind_ctx.diag_zigbee_to_tx_ms,
     ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_BUTTON_PRESS_COUNT, &blind_ctx.diag_button_press_count,
+    ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_BUTTON_LAST_EVENT, &blind_ctx.diag_button_last_event,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -457,6 +465,8 @@ static void apply_p3_zcl_state(zb_uint8_t dummy)
     blind_ctx.diag_rx_bytes = diag.rx_bytes;
     blind_ctx.diag_tx_frames = diag.tx_frames;
     blind_ctx.diag_zigbee_commands = diag.zigbee_commands;
+    blind_ctx.diag_button_press_count = (zb_uint32_t)atomic_get(&p3_button_press_count);
+    blind_ctx.diag_button_last_event = (zb_uint8_t)atomic_get(&p3_button_last_event);
     blind_ctx.diag_zigbee_to_tx_ms = diag.last_zigbee_to_tx_ms;
     blind_ctx.diag_queue_to_tx_ms = diag.last_queue_to_tx_ms;
     blind_ctx.diag_uart_tx_ms = diag.last_uart_tx_ms;
@@ -549,63 +559,90 @@ static bool p3_hw_cal_execute(zb_uint8_t command)
 static const struct gpio_dt_spec p3_cal_button =
     GPIO_DT_SPEC_GET(DT_ALIAS(calibration_button), gpios);
 static atomic_t p3_cal_button_ready;
+static atomic_t p3_button_press_count;
+static atomic_t p3_button_last_event;
+
+static void p3_button_event(uint8_t event)
+{
+    atomic_set(&p3_button_last_event, event);
+    p3_zcl_schedule_sync();
+}
 
 static void p3_cal_button_thread(void *a, void *b, void *c)
 {
-    bool was_pressed = false;
-    uint32_t press_start = 0, last_release = 0;
-    uint8_t clicks = 0;
+    bool stable_pressed = false, candidate_pressed = false;
+    uint32_t candidate_since = 0U, press_start = 0U, last_release = 0U;
+    uint8_t clicks = 0U;
+    bool finish_on_press = false;
     ARG_UNUSED(a); ARG_UNUSED(b); ARG_UNUSED(c);
-    if (!atomic_get(&p3_cal_button_ready)) return;
+    /* Initial delay lets the board and input settle before reading. */
+    while (!atomic_get(&p3_cal_button_ready)) k_msleep(50);
 
     for (;;) {
-        int value = gpio_pin_get_dt(&p3_cal_button);
+        const int read = gpio_pin_get_dt(&p3_cal_button);
         const uint32_t now = k_uptime_get_32();
-        bool pressed = value > 0;
+        if (read < 0) { k_msleep(20); continue; }
+        const bool raw_pressed = read > 0;
 
-        if (value < 0) {
-            k_msleep(20);
-            continue;
+        if (raw_pressed != candidate_pressed) {
+            candidate_pressed = raw_pressed;
+            candidate_since = now;
         }
-        if (pressed && !was_pressed) {
-            /* Priority: first local press while auto-moving sends DP102=1.
-             * No double-click recognition or Zigbee delivery delay.
-             */
-            if (p3_hw_cal_phase == 2U) {
-                if (p3_hw_cal_execute(3U)) {
-                    LOG_INF("P3 LOCAL instant finish/save queued");
-                } else {
-                    LOG_ERR("P3 LOCAL finish rejected; disconnect motor power if moving");
-                }
-                clicks = 0;
-                /* Require release before recognizing further gestures. */
-            } else {
+        if (candidate_pressed != stable_pressed &&
+            (uint32_t)(now - candidate_since) >= 40U) {
+            stable_pressed = candidate_pressed;
+            if (stable_pressed) {
+                atomic_inc(&p3_button_press_count);
+                p3_button_event(1U); /* each electrically debounced press */
+                finish_on_press = (p3_hw_cal_phase == 2U);
                 press_start = now;
-            }
-        } else if (!pressed && was_pressed) {
-            if (press_start != 0U && p3_hw_cal_phase != 2U) {
-                const uint32_t held = now - press_start;
-                if (held >= 5000U) {
-                    if (p3_hw_cal_phase == 0U && p3_hw_cal_execute(1U)) {
-                        LOG_WRN("P3 LOCAL hardware endpoints reset");
+                if (finish_on_press) {
+                    clicks = 0U;
+                    /* Most time-sensitive action: never wait for multiclick. */
+                    if (p3_hw_cal_execute(3U)) {
+                        p3_button_event(5U);
+                        LOG_INF("P3 LOCAL finish/save queued immediately");
+                    } else {
+                        p3_button_event(6U);
+                        LOG_ERR("P3 local finish rejected; disconnect power if moving");
                     }
-                    clicks = 0;
-                } else if (held >= 30U && held < 700U) {
-                    clicks++;
-                    last_release = now;
                 }
+            } else {
+                if (!finish_on_press) {
+                    uint32_t held = now - press_start;
+                    if (held >= 5000U) {
+                        /* Explicitly allow a new reset from any phase except
+                         * live training; pressing during training already
+                         * finishes on the first edge. */
+                        if (p3_hw_cal_execute(1U)) {
+                            p3_button_event(4U);
+                            LOG_WRN("P3 LOCAL motor endpoints RESET");
+                        } else {
+                            p3_button_event(6U);
+                        }
+                        clicks = 0U;
+                    } else if (held >= 40U && held < 800U) {
+                        clicks++;
+                        last_release = now;
+                    }
+                }
+                finish_on_press = false;
+                press_start = 0U;
             }
-            press_start = 0;
         }
-        if (!pressed && clicks && (now - last_release >= 450U)) {
+        if (!stable_pressed && clicks && (uint32_t)(now - last_release) >= 450U) {
             if (clicks == 2U && p3_hw_cal_phase == 1U) {
-                if (p3_hw_cal_execute(2U)) LOG_WRN("P3 LOCAL auto-learning started");
+                if (p3_hw_cal_execute(2U)) p3_button_event(3U);
+                else p3_button_event(6U);
+            } else if (clicks == 1U) {
+                p3_button_event(2U);
+            } else if (clicks == 3U) {
+                p3_button_event(7U);
+            } else {
+                p3_button_event(6U);
             }
-            /* Triple press intentionally never resets endpoints. During
-             * training the first press already handles urgent STOP/save. */
-            clicks = 0;
+            clicks = 0U;
         }
-        was_pressed = pressed;
         k_msleep(20);
     }
 }
