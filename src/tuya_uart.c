@@ -177,7 +177,7 @@ bool tuya_uart_submit_local_finish(void)
     uint8_t bytes[P3_TX_FRAME_CAP];
     size_t length;
     if (!IS_ENABLED(CONFIG_P3_HW_CALIBRATION_ENABLE)) return false;
-    length = tuya_motor_encode_hw_calibration(3U, bytes, sizeof(bytes));
+    length = tuya_motor_encode_action(TUYA_MOTOR_STOP, bytes, sizeof(bytes));
     return queue_motor_frame(bytes, length, true, true);
 }
 
@@ -383,7 +383,7 @@ static void transmit_main(void *a, void *b, void *c)
         if (frame.local_finish) {
             p3_diag.local_finish_transmitted++;
             p3_diag.local_finish_queue_to_tx_ms = tx_started - frame.queued_at_ms;
-            LOG_INF("P3 local finish TX queued-to-start=%u ms", (unsigned int)(tx_started - frame.queued_at_ms));
+            LOG_INF("P3 local ordinary STOP DP1 TX queued-to-start=%u ms", (unsigned int)(tx_started - frame.queued_at_ms));
         }
         p3_diag.last_zigbee_to_tx_ms = frame.zigbee_at_ms ?
             tx_started - frame.zigbee_at_ms : UINT32_MAX;
