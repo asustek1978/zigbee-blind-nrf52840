@@ -137,6 +137,16 @@ bool tuya_uart_submit_position(uint8_t percent)
 }
 
 
+bool tuya_uart_submit_hw_calibration(uint8_t command)
+{
+    uint8_t bytes[P3_TX_FRAME_CAP];
+    size_t length;
+    if (!IS_ENABLED(CONFIG_P3_HW_CALIBRATION_ENABLE)) return false;
+    length = tuya_motor_encode_hw_calibration(command, bytes, sizeof(bytes));
+    /* Reset/start purge stale position commands; finish must not be delayed. */
+    return queue_motor_frame(bytes, length, true);
+}
+
 /* A WBR3 capture after physically waking the battery motor showed
  * heartbeat, product query, work-mode query, then DP status query.
  * No periodic heartbeat interval was established in that capture.
