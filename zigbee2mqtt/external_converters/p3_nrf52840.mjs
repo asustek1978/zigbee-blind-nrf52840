@@ -40,6 +40,10 @@ const diagnosticAttrs = {
     p3_zigbee_callback_to_tx_ms: 0xf118,
     p3_button_press_count: 0xf119,
     p3_button_last_event: 0xf11a,
+    p3_local_finish_presses: 0xf11b,
+    p3_local_finish_queued: 0xf11c,
+    p3_local_finish_tx: 0xf11d,
+    p3_local_finish_tx_delay_ms: 0xf11e,
 };
 
 const p3DiagnosticsFromZigbee = {
