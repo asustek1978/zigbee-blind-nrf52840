@@ -59,6 +59,7 @@ struct p3_tx_msg {
     uint8_t length;
     uint32_t queued_at_ms;
     uint32_t zigbee_at_ms;
+    bool local_finish;
 };
 
 K_MSGQ_DEFINE(p3_tx_queue, sizeof(struct p3_tx_msg), P3_TX_QUEUE_DEPTH, 4);
@@ -102,7 +103,7 @@ void tuya_uart_mark_zigbee_command(void)
     p3_zcl_schedule_sync();
 }
 
-static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
+static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop, bool local_finish)
 {
     struct p3_tx_msg msg = {0};
 
@@ -116,6 +117,7 @@ static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
     msg.length = (uint8_t)length;
     msg.queued_at_ms = k_uptime_get_32();
     msg.zigbee_at_ms = (uint32_t)atomic_set(&pending_zigbee_timestamp, 0);
+    msg.local_finish = local_finish;
 
     /* STOP drops any outstanding future requests; current transmission
      * cannot be interrupted byte-for-byte, but never retry/loop commands.
@@ -124,7 +126,14 @@ static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
         k_msgq_purge(&p3_tx_queue);
     }
 
-    return k_msgq_put(&p3_tx_queue, &msg, K_NO_WAIT) == 0;
+    bool accepted = k_msgq_put(&p3_tx_queue, &msg, K_NO_WAIT) == 0;
+    if (accepted && local_finish) {
+        k_mutex_lock(&p3_diag_mutex, K_FOREVER);
+        p3_diag.local_finish_queued++;
+        k_mutex_unlock(&p3_diag_mutex);
+        p3_zcl_schedule_sync();
+    }
+    return accepted;
 }
 
 bool tuya_uart_submit_action(enum tuya_motor_action action)
@@ -136,7 +145,7 @@ bool tuya_uart_submit_action(enum tuya_motor_action action)
         return false;
     }
     count = tuya_motor_encode_action(action, encoded, sizeof(encoded));
-    return queue_motor_frame(encoded, count, action == TUYA_MOTOR_STOP);
+    return queue_motor_frame(encoded, count, action == TUYA_MOTOR_STOP, false);
 }
 
 bool tuya_uart_submit_position(uint8_t percent)
@@ -149,7 +158,7 @@ bool tuya_uart_submit_position(uint8_t percent)
         return false;
     }
     count = tuya_motor_encode_position(percent, encoded, sizeof(encoded));
-    return queue_motor_frame(encoded, count, false);
+    return queue_motor_frame(encoded, count, false, false);
 }
 
 
@@ -160,7 +169,16 @@ bool tuya_uart_submit_hw_calibration(uint8_t command)
     if (!IS_ENABLED(CONFIG_P3_HW_CALIBRATION_ENABLE)) return false;
     length = tuya_motor_encode_hw_calibration(command, bytes, sizeof(bytes));
     /* Reset/start purge stale position commands; finish must not be delayed. */
-    return queue_motor_frame(bytes, length, true);
+    return queue_motor_frame(bytes, length, true, false);
+}
+
+bool tuya_uart_submit_local_finish(void)
+{
+    uint8_t bytes[P3_TX_FRAME_CAP];
+    size_t length;
+    if (!IS_ENABLED(CONFIG_P3_HW_CALIBRATION_ENABLE)) return false;
+    length = tuya_motor_encode_hw_calibration(3U, bytes, sizeof(bytes));
+    return queue_motor_frame(bytes, length, true, true);
 }
 
 /* A WBR3 capture after physically waking the battery motor showed
@@ -185,7 +203,7 @@ static void enqueue_captured_startup(void)
 
     for (size_t i = 0; i < ARRAY_SIZE(requests); ++i) {
         size_t count = tuya_motor_encode_request(requests[i], bytes, sizeof(bytes));
-        if (!queue_motor_frame(bytes, count, false)) {
+        if (!queue_motor_frame(bytes, count, false, false)) {
             LOG_WRN("P3 startup request 0x%02x could not be queued", requests[i]);
             return;
         }
@@ -362,6 +380,11 @@ static void transmit_main(void *a, void *b, void *c)
         const uint32_t tx_done = k_uptime_get_32();
         k_mutex_lock(&p3_diag_mutex, K_FOREVER);
         p3_diag.tx_frames++;
+        if (frame.local_finish) {
+            p3_diag.local_finish_transmitted++;
+            p3_diag.local_finish_queue_to_tx_ms = tx_started - frame.queued_at_ms;
+            LOG_INF("P3 local finish TX queued-to-start=%u ms", (unsigned int)(tx_started - frame.queued_at_ms));
+        }
         p3_diag.last_zigbee_to_tx_ms = frame.zigbee_at_ms ?
             tx_started - frame.zigbee_at_ms : UINT32_MAX;
         p3_diag.last_queue_to_tx_ms = tx_started - frame.queued_at_ms;
