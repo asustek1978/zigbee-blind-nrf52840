@@ -103,14 +103,13 @@ const p3DiagnosticsRefresh = {
         if (value !== 'refresh') {
             throw new Error('P3-NRF52840: only p3_diagnostics_refresh=refresh is supported');
         }
-        // ZBOSS cannot fit 13 custom Basic attributes in one Read Response:
-        // it returned INSUFFICIENT_SPACE for 0xF10C after the first 12.
-        // Read eight and five attributes separately, preserving the same
-        // p3_diagnostics_refresh MQTT API. Neither request sends motor UART.
+        // Read only five attributes per Zigbee frame. The previous final
+        // request contained 13 attributes and failed with INSUFFICIENT_SPACE.
+        // No motor control UART frames are emitted by this diagnostic read.
         const ids = Object.values(diagnosticAttrs);
-        await entity.read('genBasic', ids.slice(0, 8));
-        await entity.read('genBasic', ids.slice(8, 16));
-        await entity.read('genBasic', ids.slice(16));
+        for (let i = 0; i < ids.length; i += 5) {
+            await entity.read('genBasic', ids.slice(i, i + 5));
+        }
     },
 };
 
