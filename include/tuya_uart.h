@@ -22,6 +22,10 @@ void tuya_uart_get_state(struct tuya_motor_state *out);
  */
 struct tuya_uart_diagnostics {
     uint32_t rx_bytes;
+    uint32_t tx_frames;
+    uint32_t last_queue_to_tx_ms;
+    uint32_t last_uart_tx_ms;
+    uint32_t last_rx_after_tx_ms;
     uint32_t valid_frames;
     uint32_t rejected_frames;
     uint32_t dropped_bytes;
