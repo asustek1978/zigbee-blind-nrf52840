@@ -49,7 +49,7 @@ const p3DiagnosticsFromZigbee = {
             // 0xFF explicitly represents "not observed" for these fields.
             result[key] = (key === 'p3_uart_rx_after_tx_ms' && raw === 4294967295) ? null : (['p3_dp1_raw', 'p3_dp3_raw', 'p3_dp13_raw', 'p3_cal_bottom_raw', 'p3_cal_top_raw',
                             'p3_uart_last_command', 'p3_uart_last_format'].includes(key)
-                            && raw === 255) ? null : raw);
+                            && raw === 255) ? null : raw;
         }
         return result;
     },
