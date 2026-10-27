@@ -55,6 +55,16 @@ config P3_POSITION_TARGET_ENABLE
       Enable only on the experimental blind, with working STOP and
       a clear path to stop motor movement. Does not calibrate motor limits.
 
+config P3_HW_CALIBRATION_ENABLE
+    bool "Enable supervised original P3 hardware limit calibration"
+    depends on P3_UART_TX_ENABLE
+    default n
+    help
+      Allows three captured Tuya commands: DP107=0 reset motor limits,
+      DP102=0 start automatic ascent, DP102=1 stop and save upper limit.
+      Only enable for supervised tests with physical stop/power disconnect
+      accessible; resetting physical travel bounds may require re-training.
+
 config P3_ZCL_POSITION_INVERT
     bool "Invert DP3 lift percentage and Zigbee requested setpoint"
     depends on P3_ZCL_POSITION_ENABLE
