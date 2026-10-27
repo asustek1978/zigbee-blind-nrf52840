@@ -31,6 +31,7 @@ const diagnosticAttrs = {
     p3_cal_bottom_raw: 0xf10e,
     p3_cal_top_raw: 0xf10f,
     p3_cal_valid: 0xf110,
+    p3_hw_cal_phase: 0xf112,
 };
 
 const p3DiagnosticsFromZigbee = {
@@ -67,6 +68,23 @@ const p3Calibration = {
     },
 };
 
+/* Original P3 MCU calibration captured via CP2102 with native WBR3.
+ * This resets REAL motor endpoints. Requires supervised physical access.
+ */
+const p3HardwareCalibration = {
+    key: ['p3_hw_calibration'],
+    convertSet: async (entity, key, value) => {
+        const commands = {reset_motor_limits: 1, start_auto_training: 2, stop_and_save_top: 3};
+        if (!Object.prototype.hasOwnProperty.call(commands, value)) {
+            throw new Error('P3 hardware calibration command not supported');
+        }
+        await entity.write('genBasic', {
+            0xf111: {value: commands[value], type: 0x20},
+        });
+        await entity.read('genBasic', [0xf112]);
+    },
+};
+
 const p3DiagnosticsRefresh = {
     key: ['p3_diagnostics_refresh'],
     convertSet: async (entity, key, value) => {
@@ -89,12 +107,15 @@ export default {
     vendor: 'LocalDIY',
     description: 'Battery-powered Tuya P3 roller blind on nice!nano nRF52840 (prototype)',
     fromZigbee: [fz.cover_position_tilt, fz.battery, p3DiagnosticsFromZigbee],
-    toZigbee: [tz.cover_state, tz.cover_position_tilt, p3DiagnosticsRefresh, p3Calibration],
+    toZigbee: [tz.cover_state, tz.cover_position_tilt, p3DiagnosticsRefresh, p3Calibration, p3HardwareCalibration],
     exposes: [
         e.cover_position(), e.battery(),
         ...Object.keys(diagnosticAttrs).map((key) =>
             e.numeric(key, ea.STATE).withCategory('diagnostic')
         ),
+        e.enum('p3_hw_calibration', ea.SET,
+            ['reset_motor_limits', 'start_auto_training', 'stop_and_save_top'])
+            .withDescription('WARNING: Changes motor MCU physical travel limits; operate only at the blind with safe STOP available.'),
         e.enum('p3_calibration', ea.SET, ['save_bottom', 'save_top', 'reset'])
             .withDescription('Save current DP3 as bottom or top endpoint; reset returns to build 35 mapping.'),
         e.enum('p3_diagnostics_refresh', ea.SET, ['refresh'])
