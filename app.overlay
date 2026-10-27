@@ -1,0 +1,20 @@
+/*
+ * Build 41 experimental local calibration button on P0.11.
+ * Verify HW-954 solder-pad mapping before wiring. Never drive this input.
+ * Contact (normally open) connects the selected pin to GND only.
+ */
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/ {
+    p3_cal_key: p3_calibration_key {
+        compatible = "gpio-keys";
+        status = "okay";
+        calibration_button: calibration_button {
+            gpios = <&gpio0 11 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+            label = "P3 local calibration";
+        };
+    };
+    aliases {
+        calibration-button = &calibration_button;
+    };
+};
