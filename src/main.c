@@ -679,7 +679,12 @@ int main(void)
 
     zb_set_ed_timeout(ED_AGING_TIMEOUT_64MIN);
     zb_set_keepalive_timeout(ZB_MILLISECONDS_TO_BEACON_INTERVAL(30000));
-    zigbee_configure_sleepy_behavior(true);
+    /* Build 40 latency experiment: radio listening while idle instead of
+     * sleepy End Device parent polling. Keep Zigbee End Device role.
+     * Higher power draw is expected; restore build 39 to compare.
+     */
+    zigbee_configure_sleepy_behavior(false);
+    LOG_INF("P3 build 40: Zigbee non-sleepy receiver enabled (latency experiment)");
 
     zigbee_enable();
     atomic_set(&zigbee_started, 1);
