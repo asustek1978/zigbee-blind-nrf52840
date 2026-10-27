@@ -50,6 +50,8 @@
 #define P3_CAL_BOTTOM 0xF10EU
 #define P3_CAL_TOP 0xF10FU
 #define P3_CAL_VALID 0xF110U
+#define P3_HW_CAL_COMMAND 0xF111U /* 1 reset, 2 start, 3 finish */
+#define P3_HW_CAL_PHASE 0xF112U /* 0 idle, 1 reset, 2 training */
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -90,6 +92,8 @@ struct blind_device_context {
     zb_uint8_t cal_bottom;
     zb_uint8_t cal_top;
     zb_uint8_t cal_valid;
+    zb_uint8_t hw_cal_command;
+    zb_uint8_t hw_cal_phase;
 };
 
 static struct blind_device_context blind_ctx;
@@ -107,6 +111,7 @@ struct p3_calibration { zb_uint8_t bottom, top, mask, magic; };
 static struct p3_calibration p3_cal;
 #define P3_CAL_MAGIC 0x36U
 void p3_zcl_schedule_sync(void);
+static zb_uint8_t p3_hw_cal_phase;
 static atomic_t p3_cal_dirty;
 static void p3_cal_save_work_fn(struct k_work *work);
 K_WORK_DEFINE(p3_cal_save_work, p3_cal_save_work_fn);
@@ -249,6 +254,10 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_CAL_BOTTOM, &blind_ctx.cal_bottom,
 ZB_ZCL_SET_ATTR_DESC_M(P3_CAL_TOP, &blind_ctx.cal_top,
     ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_CAL_VALID, &blind_ctx.cal_valid,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_HW_CAL_COMMAND, &blind_ctx.hw_cal_command,
+    ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_WRITE_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_HW_CAL_PHASE, &blind_ctx.hw_cal_phase,
     ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
@@ -437,6 +446,7 @@ static void apply_p3_zcl_state(zb_uint8_t dummy)
     blind_ctx.cal_bottom = (p3_cal.mask & 1U) ? p3_cal.bottom : 0xffU;
     blind_ctx.cal_top = (p3_cal.mask & 2U) ? p3_cal.top : 0xffU;
     blind_ctx.cal_valid = p3_cal_complete() ? 1U : 0U;
+    blind_ctx.hw_cal_phase = p3_hw_cal_phase;
 
     if (IS_ENABLED(CONFIG_P3_ZCL_POSITION_ENABLE) && state.position_valid) {
         value = p3_raw_to_zcl(state.position);
@@ -483,6 +493,25 @@ void p3_zcl_schedule_sync(void)
     }
 }
 
+static bool p3_hw_cal_execute(zb_uint8_t command)
+{
+    if (!IS_ENABLED(CONFIG_P3_HW_CALIBRATION_ENABLE)) return false;
+    if (command == 1U) {
+        if (!tuya_uart_submit_hw_calibration(command)) return false;
+        p3_hw_cal_phase = 1U;
+    } else if (command == 2U) {
+        if (p3_hw_cal_phase != 1U ||
+            !tuya_uart_submit_hw_calibration(command)) return false;
+        p3_hw_cal_phase = 2U;
+    } else if (command == 3U) {
+        if (p3_hw_cal_phase != 2U ||
+            !tuya_uart_submit_hw_calibration(command)) return false;
+        p3_hw_cal_phase = 0U;
+    } else return false;
+    p3_zcl_schedule_sync();
+    return true;
+}
+
 static void covering_device_callback(zb_bufid_t bufid)
 {
     zb_zcl_device_callback_param_t *param =
@@ -495,6 +524,12 @@ static void covering_device_callback(zb_bufid_t bufid)
     }
     switch (param->device_cb_id) {
     case ZB_ZCL_SET_ATTR_VALUE_CB_ID:
+        if (param->cb_param.set_attr_value_param.cluster_id == ZB_ZCL_CLUSTER_ID_BASIC &&
+            param->cb_param.set_attr_value_param.attr_id == P3_HW_CAL_COMMAND) {
+            param->status = p3_hw_cal_execute(
+                param->cb_param.set_attr_value_param.values.data8) ? RET_OK : RET_ERROR;
+            return;
+        }
         if (param->cb_param.set_attr_value_param.cluster_id == ZB_ZCL_CLUSTER_ID_BASIC &&
             param->cb_param.set_attr_value_param.attr_id == P3_CAL_COMMAND) {
             param->status = p3_cal_apply_command(
