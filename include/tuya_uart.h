@@ -14,6 +14,7 @@
  */
 bool tuya_uart_submit_action(enum tuya_motor_action action);
 bool tuya_uart_submit_position(uint8_t percent);
+bool tuya_uart_submit_hw_calibration(uint8_t command);
 void tuya_uart_get_state(struct tuya_motor_state *out);
 
 /* UART RX-only telemetry. No interpretation of DP3/DP13 as calibrated
