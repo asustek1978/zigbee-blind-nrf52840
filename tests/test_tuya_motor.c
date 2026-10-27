@@ -176,8 +176,27 @@ static void test_captured_wbr3_startup(void)
     assert(decoded.length == 1U && decoded.data[0] == 0U);
 }
 
+static void test_hw_calibration_commands(void)
+{
+    const uint8_t frames[3][12] = {
+        {0x55,0xaa,0x00,0x06,0x00,0x05,0x6b,0x04,0x00,0x01,0x00,0x7a},
+        {0x55,0xaa,0x00,0x06,0x00,0x05,0x66,0x04,0x00,0x01,0x00,0x75},
+        {0x55,0xaa,0x00,0x06,0x00,0x05,0x66,0x04,0x00,0x01,0x01,0x76}
+    };
+    uint8_t out[32];
+    for (uint8_t i = 1; i <= 3; ++i) {
+        assert(tuya_motor_encode_hw_calibration(i, out, sizeof(out)) == 12U);
+        assert(memcmp(out, frames[i - 1], 12U) == 0);
+        assert(tuya_motor_encode_hw_calibration(i, out, 11U) == 0U);
+    }
+    assert(tuya_motor_encode_hw_calibration(0, out, sizeof(out)) == 0U);
+    assert(tuya_motor_encode_hw_calibration(4, out, sizeof(out)) == 0U);
+    assert(tuya_motor_encode_hw_calibration(1, NULL, sizeof(out)) == 0U);
+}
+
 int main(void)
 {
+    test_hw_calibration_commands();
     test_diagnostic_startup_allowlist();
     test_captured_wbr3_startup();
     test_motor_commands();
