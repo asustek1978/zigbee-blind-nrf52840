@@ -118,6 +118,9 @@ static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
+/* Local button counters must be declared before Zigbee attribute refresh. */
+static atomic_t p3_button_press_count;
+static atomic_t p3_button_last_event;
 
 /* Software travel endpoints in raw DP3 units, NOT hardware limit programming.
  * mask bit 0 = bottom, bit 1 = top. Minimum span 5%.
@@ -559,8 +562,6 @@ static bool p3_hw_cal_execute(zb_uint8_t command)
 static const struct gpio_dt_spec p3_cal_button =
     GPIO_DT_SPEC_GET(DT_ALIAS(calibration_button), gpios);
 static atomic_t p3_cal_button_ready;
-static atomic_t p3_button_press_count;
-static atomic_t p3_button_last_event;
 
 static void p3_button_event(uint8_t event)
 {
