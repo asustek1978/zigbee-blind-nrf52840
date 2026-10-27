@@ -542,6 +542,91 @@ static bool p3_hw_cal_execute(zb_uint8_t command)
     return true;
 }
 
+/* Build 41: local motor-limit learning control. The first debounced press
+ * during training finishes it immediately; DO NOT wait for multiclick timeout.
+ * The GPIO number is a board-specific bench proposal, verify before wiring.
+ */
+static const struct gpio_dt_spec p3_cal_button =
+    GPIO_DT_SPEC_GET(DT_ALIAS(calibration_button), gpios);
+static atomic_t p3_cal_button_ready;
+
+static void p3_cal_button_thread(void *a, void *b, void *c)
+{
+    bool was_pressed = false;
+    uint32_t press_start = 0, last_release = 0;
+    uint8_t clicks = 0;
+    ARG_UNUSED(a); ARG_UNUSED(b); ARG_UNUSED(c);
+    if (!atomic_get(&p3_cal_button_ready)) return;
+
+    for (;;) {
+        int value = gpio_pin_get_dt(&p3_cal_button);
+        const uint32_t now = k_uptime_get_32();
+        bool pressed = value > 0;
+
+        if (value < 0) {
+            k_msleep(20);
+            continue;
+        }
+        if (pressed && !was_pressed) {
+            /* Priority: first local press while auto-moving sends DP102=1.
+             * No double-click recognition or Zigbee delivery delay.
+             */
+            if (p3_hw_cal_phase == 2U) {
+                if (p3_hw_cal_execute(3U)) {
+                    LOG_INF("P3 LOCAL instant finish/save queued");
+                } else {
+                    LOG_ERR("P3 LOCAL finish rejected; disconnect motor power if moving");
+                }
+                clicks = 0;
+                /* Require release before recognizing further gestures. */
+            } else {
+                press_start = now;
+            }
+        } else if (!pressed && was_pressed) {
+            if (press_start != 0U && p3_hw_cal_phase != 2U) {
+                const uint32_t held = now - press_start;
+                if (held >= 5000U) {
+                    if (p3_hw_cal_phase == 0U && p3_hw_cal_execute(1U)) {
+                        LOG_WRN("P3 LOCAL hardware endpoints reset");
+                    }
+                    clicks = 0;
+                } else if (held >= 30U && held < 700U) {
+                    clicks++;
+                    last_release = now;
+                }
+            }
+            press_start = 0;
+        }
+        if (!pressed && clicks && (now - last_release >= 450U)) {
+            if (clicks == 2U && p3_hw_cal_phase == 1U) {
+                if (p3_hw_cal_execute(2U)) LOG_WRN("P3 LOCAL auto-learning started");
+            }
+            /* Triple press intentionally never resets endpoints. During
+             * training the first press already handles urgent STOP/save. */
+            clicks = 0;
+        }
+        was_pressed = pressed;
+        k_msleep(20);
+    }
+}
+K_THREAD_DEFINE(p3_button_tid, 1024, p3_cal_button_thread,
+                NULL, NULL, NULL, K_PRIO_PREEMPT(9), 0, 500);
+
+/* Initialize local input before Zigbee; absent wiring remains inactive. */
+static void p3_cal_button_init(void)
+{
+    if (!gpio_is_ready_dt(&p3_cal_button)) {
+        LOG_ERR("P3 local calibration GPIO controller unavailable");
+        return;
+    }
+    if (gpio_pin_configure_dt(&p3_cal_button, GPIO_INPUT) != 0) {
+        LOG_ERR("P3 local calibration GPIO configuration failed");
+        return;
+    }
+    atomic_set(&p3_cal_button_ready, 1);
+    LOG_INF("P3 local calibration input active");
+}
+
 static void covering_device_callback(zb_bufid_t bufid)
 {
     zb_zcl_device_callback_param_t *param =
@@ -673,6 +758,7 @@ int main(void)
             LOG_ERR("P3 calibration settings unavailable: %d", settings_err);
         }
     }
+    p3_cal_button_init();
     ZB_AF_REGISTER_DEVICE_CTX(&blind_device_ctx);
     initialize_attributes();
     ZB_ZCL_REGISTER_DEVICE_CB(covering_device_callback);
@@ -683,8 +769,8 @@ int main(void)
      * sleepy End Device parent polling. Keep Zigbee End Device role.
      * Higher power draw is expected; restore build 39 to compare.
      */
-    zigbee_configure_sleepy_behavior(false);
-    LOG_INF("P3 build 40: Zigbee non-sleepy receiver enabled (latency experiment)");
+    zigbee_configure_sleepy_behavior(true);
+    LOG_INF("P3 build 41: sleepy Zigbee receiver restored");
 
     zigbee_enable();
     atomic_set(&zigbee_started, 1);
