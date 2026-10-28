@@ -210,7 +210,7 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package HW-954 motor control and DP13 battery UF2
+      - name: Package P3-NRF52840 v41.3 Stable UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
@@ -226,34 +226,36 @@ jobs:
           )
           python3 app/tools/check_uf2_layout.py release/P3-NRF52840-build41-3.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840-build41-3.uf2 — MOTOR CONTROL AND PROVISIONAL DP13 BATTERY
+          P3-NRF52840 v41.3 — STABLE MOTOR CONTROL
 
-          Target: HW-954 nRF52840 nice!nano-compatible clone.
-          Zigbee: End Device, endpoint 10; DP3 RX position reporting retained.
+          Target: HW-954 nRF52840 nice!nano-compatible board.
+          Zigbee: End Device, endpoint 10.
+          Firmware SWBuildID (ZCL Basic 0x4000): 41.3.
 
-          UART TX P0.20 IS ENABLED; this may physically move the motor.
-          Commands: OPEN, CLOSE, STOP, DP2 percentage target; ZCL Basic calibration write attr 0xF10D. Raw DP13 0..100 is mapped\n          to Zigbee battery percentage; calibration not independently verified.\n          Zigbee position targets (DP2) enabled experimentally; no automatic UART startup queries, no MCU init.
-          OPEN tested through CP2102; CLOSE and STOP not independently
-          confirmed by user. This is a SUPERVISED BENCH BUILD ONLY.
+          Verified on the user's physical roller blind:
+          OPEN, CLOSE, STOP, 0–100% position control, local button,
+          physical end-stop calibration and persistence after power cycle.
+          Zigbee2MQTT can read genBasic.swBuildId = 41.3.
 
-          Disconnect motor power and UART during USB UF2 flashing.
-          Before wiring nRF TX P0.20 to confirmed P3 RX, verify output
-          logic levels 0-3.3V, common GND, safe separate supplies and no
-          conflicting drivers. Leave motor installed with physical STOP
-          accessible, keep clear of moving parts. First test with
-          short motion and verify independent STOP before relying on Zigbee.
-          Keep build 32 as recovery image.
+          SAFETY: UART TX P0.20 is enabled and may move the motor.
+          Disconnect motor power and UART while flashing via USB.
+          Verify 3.3 V logic levels, shared GND and no conflicting drivers.
+          Keep the physical STOP accessible and retain the known-good UF2.
+          After updating, test STOP before unattended operation.
 
-          Check SHA256SUMS.txt. Reset into UF2 mode before copying the .uf2.
-          If the new application fails, the original UF2 loader may still
-          be reachable by double-reset; SWD recovery is the reliable fallback.
+          The external Zigbee2MQTT converter exposes cover and battery only;
+          calibration and diagnostics are intentionally hidden in the UI.
+          Battery runtime and sleep current have not been verified.
+          This UF2 does not support Zigbee OTA firmware updates.
+
+          Verify SHA256SUMS.txt and SOURCE_COMMIT.txt against this build.
           EOF
 
-      - name: Upload build 41 hardware calibration UF2
+      - name: Upload P3-NRF52840 v41.3 Stable UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-build41-3-local-button-diagnostics-UF2
+          name: P3-NRF52840-v41.3-Stable-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
