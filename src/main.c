@@ -124,6 +124,8 @@ static struct blind_device_context blind_ctx;
 /* Zigbee strings use a one-byte LENGTH followed by UTF-8 ASCII bytes. */
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
+/* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
+static zb_uint8_t blind_sw_build_id[] = {4, '4', '1', '.', '3'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -249,6 +251,8 @@ ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_BASIC_ZCL_VERSION_ID, &blind_ctx.basic_attr.zcl
 ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_BASIC_POWER_SOURCE_ID, &blind_ctx.basic_attr.power_source)
 ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_BASIC_MANUFACTURER_NAME_ID, blind_manufacturer)
 ZB_ZCL_SET_ATTR_DESC(ZB_ZCL_ATTR_BASIC_MODEL_IDENTIFIER_ID, blind_model)
+ZB_ZCL_SET_ATTR_DESC_M(0x4000U, blind_sw_build_id,
+    ZB_ZCL_ATTR_TYPE_CHAR_STRING, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_RX_BYTES, &blind_ctx.diag_rx_bytes,
     ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_DIAG_VALID_FRAMES, &blind_ctx.diag_valid_frames,
