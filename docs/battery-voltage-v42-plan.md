@@ -1,4 +1,4 @@
-# HW-954 battery voltage sensing — v42 investigation (NOT FLASHABLE)
+# SuperMini NRF52840 battery voltage sensing — v42 investigation (NOT FLASHABLE)
 
 Status: research only. Stable firmware v41.3 and main branch must not be modified.
 
@@ -10,10 +10,10 @@ Status: research only. Stable firmware v41.3 and main branch must not be modifie
 - Zigbee endpoint 10 already exposes Power Configuration BatteryVoltage (0x0020, uint8, 100 mV units), but not as reportable. Zigbee2MQTT converter currently exposes only battery percentage.
 
 ## Known hardware observations
-- HW-954 with USB disconnected: RAW measured 3.85 V, B+ measured 0.85 V (user measurement; wiring and measurement conditions need confirmation).
-- Li-ion 1S 2000 mAh battery powers the P3 motor; SS24 diode is in the HW-954 supply path.
-- HW-954 schematic / RAW-to-VDDH continuity NOT confirmed. Do not infer that VDDH follows RAW.
-- Avoid charging through the HW-954 USB port until charging path and SS24 orientation are confirmed.
+- SuperMini NRF52840 with USB disconnected: RAW measured 3.85 V, B+ measured 0.85 V (user measurement; wiring and measurement conditions need confirmation).
+- Li-ion 1S 2000 mAh battery powers the P3 motor; SS24 diode is in the SuperMini NRF52840 supply path.
+- SuperMini NRF52840 schematic / RAW-to-VDDH continuity NOT confirmed. Do not infer that VDDH follows RAW.
+- Avoid charging through the SuperMini NRF52840 USB port until charging path and SS24 orientation are confirmed.
 
 ## Possible sensing paths
 1. SAADC internal VDDHDIV5 (PSEL=0x0D), only if VDDH is actually powered by the battery-side rail and nRF52840 variant/power mode supports it.
@@ -24,14 +24,14 @@ Status: research only. Stable firmware v41.3 and main branch must not be modifie
 - Keep UART motor control, Zigbee pairing, calibration, NVS, sleepy End Device behavior and DP13 battery reporting unchanged.
 - Add compile-time option disabled by default; SAADC initialization failure must not block Zigbee startup.
 - Sample infrequently (e.g. every 30–60 min), avoid continuous ADC operation, average several samples.
-- Verify ADC gain/reference and scaling against Nordic nRF52840 SAADC documentation and actual HW-954 supply topology.
+- Verify ADC gain/reference and scaling against Nordic nRF52840 SAADC documentation and actual SuperMini NRF52840 supply topology.
 - Report BatteryVoltage in 100 mV Zigbee ZCL units, with unknown 0xFF on invalid readings. Prefer retaining a millivolt diagnostic for precise validation.
 - Mark voltage reporting read-only/reportable only after testing; update Z2M converter accordingly.
 - Do not derive percentage from voltage before validating chemistry, discharge curve and SS24 voltage drop under load.
 - Build CI, flash and bench-test on spare board before any production motor update.
 
 ## Verification measurements
-- With USB disconnected: GND-to-RAW, GND-to-B+, GND-to-VCC, battery terminals before SS24 and HW-954 supply after SS24.
+- With USB disconnected: GND-to-RAW, GND-to-B+, GND-to-VCC, battery terminals before SS24 and SuperMini NRF52840 supply after SS24.
 - With power disconnected, continuity RAW-to-B+ and RAW-to-VDDH only if actual chip pad or schematic is identified safely; do not probe microscopic chip pins in situ.
 - Log battery voltage before/after a curtain movement to evaluate load sag.
 
