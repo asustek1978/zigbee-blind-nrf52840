@@ -39,3 +39,8 @@ Status: research only. Stable firmware v41.3 and main branch must not be modifie
 - Nordic nRF52840 product specification, SAADC VDDHDIV5 and power supply modes: https://docs.nordicsemi.com/r/bundle/ps_nrf52840/page/power.html
 - nice!nano pinout/schematic: https://nicekeyboards.com/docs/nice-nano/pinout-schematic/
 - nRFMicro wiki battery comparisons: https://github.com/joric/nrfmicro/wiki/Batteries
+
+## LED power optimization (user confirmed two continuously lit LEDs)
+- LED 1: Zigbee status indicator driven by firmware via P0.15. v41.3 turns it ON while unjoined and during startup, OFF when joined. For v42, make status LED always OFF from application startup, including during joining/leave, without touching Zigbee stack or bootloader.
+- LED 2: power indicator stays lit on battery power with USB disconnected. Hardware LED path is unverified. P0.13 LOW disables externally switched 3.3 V VCC per seller description, but this is not evidence that the power LED is on that rail. Do not drive P0.13 until board schematic and UART/motor dependencies are checked.
+- Test: compare current draw before/after, ensure Zigbee joins/rejoins, UART motor controls, calibration and charge behavior remain intact.
