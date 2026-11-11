@@ -238,8 +238,12 @@ static bool p3_status_led_ready;
 static void set_join_status_led(bool joined)
 {
     if (p3_status_led_ready) {
-        /* GPIO logical 0 means physically HIGH => LED OFF. */
-        int err = gpio_pin_set_dt(&p3_status_led, joined ? 0 : 1);
+        /* v42 battery optimization: status LED stays OFF even while unjoined.
+         * Do not alter the charger/power LED or external VCC gate P0.13.
+         * Active-low status LED: logical 0 drives the physical pin HIGH.
+         */
+        ARG_UNUSED(joined);
+        int err = gpio_pin_set_dt(&p3_status_led, 0);
         if (err != 0) {
             LOG_WRN("P3 status LED write failed: %d", err);
         }
@@ -822,7 +826,7 @@ int main(void)
      * on P0.15, initialization failure leaves Zigbee operation intact.
      */
     if (gpio_is_ready_dt(&p3_status_led)) {
-        int err = gpio_pin_configure_dt(&p3_status_led, GPIO_OUTPUT_ACTIVE);
+        int err = gpio_pin_configure_dt(&p3_status_led, GPIO_OUTPUT_INACTIVE);
         if (err == 0) {
             p3_status_led_ready = true;
             set_join_status_led(false);
