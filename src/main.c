@@ -125,7 +125,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {4, '4', '1', '.', '3'};
+static zb_uint8_t blind_sw_build_id[] = {6, '4', '2', '.', '0', '-', '1'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -820,6 +820,20 @@ void zboss_signal_handler(zb_bufid_t bufid)
 int main(void)
 {
     LOG_INF("Starting P3 Zigbee Window Covering sleepy End Device");
+
+    /* HW-954 battery test only: P0.13 controls the external VCC rail.
+     * Keep motor disconnected. Never use this experimental image on installed blinds.
+     */
+    const struct device *gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+    if (device_is_ready(gpio0_dev)) {
+        int vcc_err = gpio_pin_configure(gpio0_dev, 13, GPIO_OUTPUT_LOW);
+        if (vcc_err != 0) {
+            LOG_ERR("P3 v42 test: P0.13 VCC gate failed: %d", vcc_err);
+        }
+    } else {
+        LOG_ERR("P3 v42 test: GPIO0 unavailable");
+    }
+
 
     /* Do not interfere with USB UF2 bootloader behavior; this runs only
      * after the application starts. If the clone has no compatible LED
