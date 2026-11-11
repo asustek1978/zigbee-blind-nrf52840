@@ -3,7 +3,7 @@ name: Zigbee nRF52840 Linux build
 on:
   workflow_dispatch:
   push:
-    branches: [main, feature/window-covering-end-device, feature/battery-voltage-v42-research, experiment/v42-0-2-sleep-test, experiment/v42-0-3-led-test, experiment/v42-0-4-led-scanner]
+    branches: [main, feature/window-covering-end-device, feature/battery-voltage-v42-research, experiment/v42-0-2-sleep-test, experiment/v42-0-3-led-test, experiment/v42-0-4-led-scanner, experiment/v42-0-5-system-off]
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -68,7 +68,7 @@ jobs:
           "$HOME/zephyr-sdk/setup.sh" -t arm-zephyr-eabi -h -c
           echo "ZEPHYR_SDK_INSTALL_DIR=$HOME/zephyr-sdk" >> "$GITHUB_ENV"
 
-      - name: Build isolated LED GPIO scanner
+      - name: Build isolated System OFF probe
         working-directory: workspace
         run: |
           set -euo pipefail
@@ -84,16 +84,16 @@ jobs:
           mkdir -p release
           python3 workspace/zephyr/scripts/build/uf2conv.py \
             -c -f 0xada52840 \
-            -o release/P3-NRF52840-v42-0-4-LED-SCANNER.uf2 \
+            -o release/P3-NRF52840-v42-0-5-SYSTEM-OFF.uf2 \
             build-sleep/zephyr/zephyr.hex
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-4-LED-SCANNER.uf2 | tee release/UF2_VALIDATION.txt
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-5-SYSTEM-OFF.uf2 | tee release/UF2_VALIDATION.txt
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (cd release && sha256sum *.uf2 > SHA256SUMS.txt)
-          printf 'EXPERIMENT ONLY: no Zigbee, no motor control. 5s lead-in, each candidate HIGH 3s LOW 3s INPUT 2s, 10s gap. Battery-only spare board.\n' > release/READ_ME_FIRST.txt
+          printf 'EXPERIMENT ONLY: no Zigbee, no motor control. 5s lead-in then nRF52840 System OFF; power-cycle to restart. Battery-only spare board.\n' > release/READ_ME_FIRST.txt
 
-      - name: Upload LED GPIO scanner
+      - name: Upload System OFF probe
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-4-LED-Scanner-UF2
+          name: P3-NRF52840-v42-0-5-System-OFF-UF2
           path: release/
           if-no-files-found: error
