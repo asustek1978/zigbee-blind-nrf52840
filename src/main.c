@@ -89,6 +89,8 @@
 #define P3_STRESS_ELAPSED_S 0xF132U
 #define P3_TUYA_FRAMES_OK 0xF133U
 #define P3_TUYA_FRAMES_REJECTED 0xF134U
+#define P3_RX_EDGE_COUNT 0xF135U
+#define P3_RX_WAKE_COUNT 0xF136U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -145,6 +147,8 @@ struct blind_device_context {
     zb_uint32_t stress_elapsed_s;
     zb_uint32_t tuya_frames_ok;
     zb_uint32_t tuya_frames_rejected;
+    zb_uint32_t rx_edge_count;
+    zb_uint32_t rx_wake_count;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -172,7 +176,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '2', '6'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '2', '7'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -281,6 +285,29 @@ static bool p3_cal_apply_command(zb_uint8_t command)
 static const struct gpio_dt_spec p3_status_led =
     GPIO_DT_SPEC_GET(DT_ALIAS(status_led), gpios);
 static bool p3_status_led_ready;
+/* Edge IRQ is a wake hint, not a byte latch. First UART byte may be lost. */
+#define P3_RX_WAKE_PIN 17U
+static const struct device *const p3_rx_gpio = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+static struct gpio_callback p3_rx_gpio_cb;
+K_SEM_DEFINE(p3_rx_wake_sem, 0, 1);
+static atomic_t p3_rx_edges;
+static void p3_rx_edge_isr(const struct device *port, struct gpio_callback *cb, uint32_t pins)
+{
+    ARG_UNUSED(port); ARG_UNUSED(cb); ARG_UNUSED(pins);
+    atomic_inc(&p3_rx_edges);
+    k_sem_give(&p3_rx_wake_sem);
+}
+static int p3_rx_arm(void)
+{
+    int rc = gpio_pin_configure(p3_rx_gpio, P3_RX_WAKE_PIN, GPIO_INPUT | GPIO_PULL_UP);
+    if (rc != 0) return rc;
+    return gpio_pin_interrupt_configure(p3_rx_gpio, P3_RX_WAKE_PIN, GPIO_INT_EDGE_FALLING);
+}
+static void p3_rx_disarm(void)
+{
+    (void)gpio_pin_interrupt_configure(p3_rx_gpio, P3_RX_WAKE_PIN, GPIO_INT_DISABLE);
+}
+
 
 static void set_join_status_led(bool joined)
 {
@@ -380,6 +407,8 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_STRESS_MAX_RX_MS, &blind_ctx.stress_max_rx_ms, ZB_ZCL_
 ZB_ZCL_SET_ATTR_DESC_M(P3_STRESS_ELAPSED_S, &blind_ctx.stress_elapsed_s, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_TUYA_FRAMES_OK, &blind_ctx.tuya_frames_ok, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_TUYA_FRAMES_REJECTED, &blind_ctx.tuya_frames_rejected, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_EDGE_COUNT, &blind_ctx.rx_edge_count, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_WAKE_COUNT, &blind_ctx.rx_wake_count, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -993,11 +1022,19 @@ int main(void)
     blind_ctx.uart_deinit_rc = (uint32_t)(int32_t)rc;
     if (rc != 0) { blind_ctx.uart_test_phase = 12U; return 0; }
     blind_ctx.uart_test_phase = 4U;
+    if (!device_is_ready(p3_rx_gpio)) { blind_ctx.uart_test_phase = 13U; return 0; }
+    gpio_init_callback(&p3_rx_gpio_cb, p3_rx_edge_isr, BIT(P3_RX_WAKE_PIN));
+    rc = gpio_add_callback(p3_rx_gpio, &p3_rx_gpio_cb);
+    if (rc != 0 || p3_rx_arm() != 0) { blind_ctx.uart_test_phase = 13U; return 0; }
     const uint32_t test_started = k_uptime_get_32();
     for (uint32_t cycle = 0U; cycle < 240U; ++cycle) {
         uint32_t scheduled = test_started + cycle * 5000U;
         int32_t remaining = (int32_t)(scheduled - k_uptime_get_32());
-        if (remaining > 0) k_sleep(K_MSEC(remaining));
+        bool edge_wake = false;
+        if (remaining > 0) edge_wake = (k_sem_take(&p3_rx_wake_sem, K_MSEC(remaining)) == 0);
+        p3_rx_disarm();
+        blind_ctx.rx_edge_count = (uint32_t)atomic_get(&p3_rx_edges);
+        if (edge_wake) blind_ctx.rx_wake_count++;
         blind_ctx.uart_test_phase = 6U;
         rc = pm_device_action_run(uart, PM_DEVICE_ACTION_RESUME);
         blind_ctx.uart_resume_rc = (uint32_t)(int32_t)rc;
@@ -1070,8 +1107,11 @@ int main(void)
         else { blind_ctx.stress_failed++; blind_ctx.stress_suspend_err++; }
         blind_ctx.stress_elapsed_s = (k_uptime_get_32() - test_started) / 1000U;
         if (rc != 0) { blind_ctx.uart_test_phase = 10U; break; }
+        rc = p3_rx_arm();
+        if (rc != 0) { blind_ctx.uart_test_phase = 13U; break; }
         blind_ctx.uart_test_phase = 4U;
     }
+    p3_rx_disarm();
     blind_ctx.stress_elapsed_s = (k_uptime_get_32() - test_started) / 1000U;
     if (blind_ctx.stress_cycles == 240U && blind_ctx.stress_resume_err == 0U &&
         blind_ctx.stress_suspend_err == 0U) blind_ctx.uart_test_phase = 9U;
