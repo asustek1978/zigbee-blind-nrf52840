@@ -16,7 +16,7 @@ target_sources(app PRIVATE
   src/tuya_frame.c
   src/tuya_motor.c
   src/tuya_motor_state.c
-  src/tuya_uart.c
+  src/tuya_uart_isolated.c
 )
 
 target_include_directories(app PRIVATE include)
