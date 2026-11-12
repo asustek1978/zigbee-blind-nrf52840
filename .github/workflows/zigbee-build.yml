@@ -170,9 +170,23 @@ jobs:
           grep -qx '^CONFIG_P3_ZCL_POSITION_ENABLE=y' "$cfg"
           grep -qx '^CONFIG_P3_UART_DIAGNOSTIC_OFF=y' "$cfg"
           if grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg"; then echo '::error::UART TX unexpectedly enabled'; exit 1; fi
-          grep -A 20 'uart@40002000' build-nicenano/zephyr/zephyr.dts | grep -q 'status = "disabled"'
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          dts = Path('build-nicenano/zephyr/zephyr.dts').read_text()
+          match = re.search(r'\buart@40002000\s*\{([^}]*)\}', dts, re.S)
+          if not match:
+              raise SystemExit('::error::UART0 node missing from generated DeviceTree')
+          if not re.search(r'\bstatus\s*=\s*"disabled"\s*;', match.group(1)):
+              raise SystemExit('::error::UART0 is not disabled in generated DeviceTree')
+          print('UART0 DeviceTree status: disabled')
+          PY
           grep -qx '^CONFIG_P3_ZCL_BATTERY_ENABLE=y' "$cfg"
-          grep -qx '^CONFIG_P3_POSITION_TARGET_ENABLE=y' "$cfg"
+          # DP2 motor position is intentionally unavailable when UART TX is off.
+          if grep -qx '^CONFIG_P3_POSITION_TARGET_ENABLE=y' "$cfg"; then
+            echo '::error::Motor position target unexpectedly enabled with UART OFF'
+            exit 1
+          fi
           grep -q 'tuya_uart_submit_position(percent)' app/src/main.c
           grep -qx '^CONFIG_SETTINGS=y' "$cfg"
           grep -qx '^CONFIG_SETTINGS_NVS=y' "$cfg"
