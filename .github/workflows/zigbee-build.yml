@@ -25,6 +25,7 @@ on:
       - experiment/v42-0-25-one-shot-status-tx
       - experiment/v42-0-26-status-response-diagnostics
       - experiment/v42-0-27-rx-edge-wakeup
+      - experiment/v42-0-28-continuous-uart-rx
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -167,8 +168,6 @@ jobs:
           cfg=build-nicenano/zephyr/.config
           grep -qx '^CONFIG_PM_DEVICE=y' "$cfg" || { echo '::error::CONFIG_PM_DEVICE is not enabled'; exit 1; }
           grep -q 'device_init(uart)' app/src/main.c
-          grep -q 'PM_DEVICE_ACTION_SUSPEND' app/src/main.c
-          grep -q 'PM_DEVICE_ACTION_RESUME' app/src/main.c
           grep -q 'P3_UART_INIT_RC 0xF11FU' app/src/main.c
           grep -q 'P3_UART_DEINIT_RC 0xF120U' app/src/main.c
           grep -q 'P3_UART_RESUME_RC 0xF122U' app/src/main.c
@@ -179,22 +178,17 @@ jobs:
           grep -q 'P3_UART_RX_WAIT_MS 0xF127U' app/src/main.c
           grep -q 'P3_STRESS_CYCLES 0xF128U' app/src/main.c
           grep -q 'P3_STRESS_ELAPSED_S 0xF132U' app/src/main.c
-          # v42.0-25 uses an inline 5-second schedule, not interval_ms.
-          grep -q 'cycle \* 5000U' app/src/main.c || { echo '::error::RX window interval is not 5000 ms'; exit 1; }
-          grep -q 'window_start) < 200U' app/src/main.c || { echo '::error::RX window duration is not 200 ms'; exit 1; }
+          # v42.0-28: passive continuous RX, no GPIO wake or motor UART TX.
+          grep -q 'while ((uint32_t)(k_uptime_get_32() - started) < 1200000U)' app/src/main.c
           grep -q 'tuya_parser_feed(&parser' app/src/main.c
-          grep -q 'P3_TUYA_FRAMES_OK 0xF133U' app/src/main.c
           grep -q 'uart_poll_in(uart, &received)' app/src/main.c
-          # v42.0-26: permit one hard-coded 7-byte status query on cycle 0.
-          grep -q 'if (cycle == 0U)' app/src/main.c
-          grep -q '0x55U, 0xAAU, 0x00U, 0x08U, 0x00U, 0x00U, 0x07U' app/src/main.c
-          grep -q 'blind_ctx.stress_tx_bytes++' app/src/main.c
+          grep -q 'P3_RX_HEADER_COUNT 0xF137U' app/src/main.c
+          grep -q 'P3_RX_ERROR_COUNT 0xF138U' app/src/main.c
+          grep -q 'P3_RX_FIRST4 0xF139U' app/src/main.c
+          grep -q 'P3_RX_NEXT4 0xF13AU' app/src/main.c
+          grep -q 'P3_RX_LAST_ERROR 0xF13BU' app/src/main.c
           grep -q 'blind_ctx.diag_last_command = decoded.command' app/src/main.c
-          grep -q 'blind_ctx.diag_rx_after_tx_ms =' app/src/main.c
-          grep -q 'GPIO_INT_EDGE_FALLING' app/src/main.c
-          grep -q 'k_sem_take(&p3_rx_wake_sem' app/src/main.c
-          grep -q 'P3_RX_WAKE_COUNT 0xF136U' app/src/main.c
-          test "$(grep -c 'uart_poll_out(uart,' app/src/main.c)" -eq 1
+          if grep -q 'uart_poll_out(uart,' app/src/main.c; then echo '::error::Passive RX test must not transmit'; exit 1; fi
           if grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg"; then echo '::error::Motor command TX must remain disabled'; exit 1; fi
           grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
           echo "=== v42.0-25 power configuration diagnostics ==="
