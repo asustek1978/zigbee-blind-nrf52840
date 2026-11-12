@@ -177,7 +177,8 @@ jobs:
           grep -q 'P3_STRESS_ELAPSED_S 0xF132U' app/src/main.c
           grep -q 'cycle < 240U' app/src/main.c
           grep -q 'interval_ms = 5000U' app/src/main.c
-          grep -q 'uart_poll_out(uart, 0xA5U)' app/src/main.c
+          grep -q 'uart_poll_out(uart, expected)' app/src/main.c
+          grep -q 'received != expected' app/src/main.c
           grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
           echo "=== v42.0-22 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
