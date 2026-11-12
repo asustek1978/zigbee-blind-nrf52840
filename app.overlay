@@ -18,3 +18,6 @@
         calibration-button = &calibration_button;
     };
 };
+
+/* v42.0-11: disable UARTE at device-tree level, not just TX. */
+&uart0 { status = "disabled"; };
