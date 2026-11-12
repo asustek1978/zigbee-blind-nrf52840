@@ -22,6 +22,7 @@ on:
       - experiment/v42-0-21-uart-loopback-timeout
       - experiment/v42-0-22-uart-20min-stress
       - experiment/v42-0-23-tuya-framing-pm-bench
+      - experiment/v42-0-24-p3-rx-only-windows
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -139,7 +140,7 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Verify v42.0-23 UART driver isolation
+      - name: Verify v42.0-24 UART driver isolation
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
@@ -176,15 +177,13 @@ jobs:
           grep -q 'P3_UART_RX_WAIT_MS 0xF127U' app/src/main.c
           grep -q 'P3_STRESS_CYCLES 0xF128U' app/src/main.c
           grep -q 'P3_STRESS_ELAPSED_S 0xF132U' app/src/main.c
-          grep -q 'cycle < 240U' app/src/main.c
           grep -q 'interval_ms = 5000U' app/src/main.c
-          grep -q 'uart_poll_out(uart, expected)' app/src/main.c
-          grep -q 'tuya_encode(&tx_frame' app/src/main.c
           grep -q 'tuya_parser_feed(&parser' app/src/main.c
           grep -q 'P3_TUYA_FRAMES_OK 0xF133U' app/src/main.c
-          grep -q 'received != expected' app/src/main.c
+          grep -q 'uart_poll_in(uart, &received)' app/src/main.c
+          if grep -q 'uart_poll_out(' app/src/main.c; then echo '::error::RX-only main.c must not transmit'; exit 1; fi
           grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
-          echo "=== v42.0-23 power configuration diagnostics ==="
+          echo "=== v42.0-24 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
           for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
             if ! grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -228,7 +227,7 @@ jobs:
           if grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"; then echo '::error::Calibration must be off'; exit 1; fi
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
           grep -q 'status = "okay";' app/boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts
-          echo "v42.0-23 CONFIG PASS: UART0 driver enabled, UART worker excluded, motor TX disabled."
+          echo "v42.0-24 CONFIG PASS: UART0 driver enabled, UART worker excluded, motor TX disabled."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -264,37 +263,39 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-23 experimental UF2
+      - name: Package P3-NRF52840 v42.0-24 experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-23-Tuya-ON-DEMAND.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-24-RX-Only-ON-DEMAND.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-23-Tuya-ON-DEMAND.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-23-Tuya-ON-DEMAND.uf2
+            sha256sum P3-NRF52840-v42-0-24-RX-Only-ON-DEMAND.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-24-RX-Only-ON-DEMAND.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-23-Tuya-ON-DEMAND.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-24-RX-Only-ON-DEMAND.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-23 Tuya framed UART PM bench
-          SPARE HW-954 ONLY; TX P0.20 -> RX P0.17 jumper. NO MOTOR.
-          240 cycles / 20 minutes; one 9-byte Zigbee-MCU 0x02 framed
-          status-query (0x08) per cycle. Local loopback only.
-          Encoder tuya_encode and parser tuya_parser_feed validate each frame.
-          Expect 240 frames, 2160 TX bytes, 2160 RX bytes, zero errors.
-          Additional Basic attributes: 0xF133 tuya_frames_ok,
-          0xF134 tuya_frames_rejected. Motor movement TX remains disabled.
+          P3-NRF52840 v42.0-24 RX-ONLY P3 UART observation
+          SPARE HW-954 ONLY. Remove loopback jumper before power-on.
+          Connect P3 TXD -> nRF P0.17 RX, common GND ONLY after checking
+          voltage levels. NEVER connect nRF TX P0.20 to motor.
+          240 receive windows, 200ms each every 5s; 30s startup delay.
+          Motor commands are disabled. No bytes transmitted by firmware.
+          0xF128 windows; 0xF12C received bytes; 0xF133 valid Tuya frames;
+          0xF134 parser rejects; 0xF12E incomplete windows.
+          Unsolicited data outside RX windows is intentionally lost.
+          Expect 240 completed windows and 0 PM errors; RX bytes may be 0.
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-23 experimental UF2
+      - name: Upload P3-NRF52840 v42.0-24 experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-23-Tuya-On-Demand-UF2
+          name: P3-NRF52840-v42-0-24-RX-Only-On-Demand-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
