@@ -73,6 +73,8 @@
 #define P3_UART_SUSPEND2_RC 0xF123U
 #define P3_UART_RX_RC 0xF124U
 #define P3_UART_RX_BYTE 0xF125U
+#define P3_UART_RX_ATTEMPTS 0xF126U
+#define P3_UART_RX_WAIT_MS 0xF127U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -114,6 +116,8 @@ struct blind_device_context {
     zb_uint32_t uart_suspend2_rc;
     zb_uint32_t uart_rx_rc;
     zb_uint8_t uart_rx_byte;
+    zb_uint32_t uart_rx_attempts;
+    zb_uint32_t uart_rx_wait_ms;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -141,7 +145,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '2', '0'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '2', '1'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -905,6 +909,8 @@ int main(void)
     blind_ctx.uart_suspend2_rc = 0x7FFFFFFFU;
     blind_ctx.uart_rx_rc = 0x7FFFFFFFU;
     blind_ctx.uart_rx_byte = 0U;
+    blind_ctx.uart_rx_attempts = 0U;
+    blind_ctx.uart_rx_wait_ms = 0U;
     blind_ctx.uart_test_phase = 0U;
     p3_cal_button_init();
     ZB_AF_REGISTER_DEVICE_CTX(&blind_device_ctx);
@@ -954,10 +960,24 @@ int main(void)
             if (rc == 0) {
                 blind_ctx.uart_test_phase = 7U;
                 uint8_t received = 0U;
+                /* Clear any stale RX byte before the loopback transmission. */
+                while (uart_poll_in(uart, &received) == 0) {
+                    /* Drain the receive FIFO; bounded to avoid lockup. */
+                    if (++blind_ctx.uart_rx_attempts >= 32U) break;
+                }
+                blind_ctx.uart_rx_attempts = 0U;
+                uint32_t started = k_uptime_get_32();
                 uart_poll_out(uart, 0xA5U);
-                int rx_rc = uart_poll_in(uart, &received);
+                int rx_rc = -1;
+                do {
+                    blind_ctx.uart_rx_attempts++;
+                    rx_rc = uart_poll_in(uart, &received);
+                    if (rx_rc == 0) break;
+                    k_sleep(K_MSEC(1));
+                } while ((uint32_t)(k_uptime_get_32() - started) < 100U);
+                blind_ctx.uart_rx_wait_ms = k_uptime_get_32() - started;
                 blind_ctx.uart_rx_rc = (uint32_t)(int32_t)rx_rc;
-                blind_ctx.uart_rx_byte = received;
+                blind_ctx.uart_rx_byte = (rx_rc == 0) ? received : 0U;
                 k_sleep(K_SECONDS(3));
                 blind_ctx.uart_test_phase = 8U;
                 rc = pm_device_action_run(uart, PM_DEVICE_ACTION_SUSPEND);
