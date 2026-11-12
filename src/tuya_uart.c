@@ -11,6 +11,7 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/uart.h>
 #include <hal/nrf_uarte.h>
+#include <hal/nrf_gpio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/atomic.h>
@@ -287,6 +288,13 @@ static void receive_main(void *a, void *b, void *c)
     nrf_uarte_task_trigger(NRF_UARTE0, NRF_UARTE_TASK_STOPRX);
     nrf_uarte_task_trigger(NRF_UARTE0, NRF_UARTE_TASK_STOPTX);
     nrf_uarte_disable(NRF_UARTE0);
+    /* v42.0-14: isolate physical pins after UARTE is disabled.
+     * P0.17 (motor RX) and P0.20 (motor TX) are unconnected on the
+     * spare HW-954. Pull both high as inputs to avoid floating pins.
+     * Not safe for use with an attached motor or active UART traffic.
+     */
+    nrf_gpio_cfg_input(NRF_GPIO_PIN_MAP(0, 17), NRF_GPIO_PIN_PULLUP);
+    nrf_gpio_cfg_input(NRF_GPIO_PIN_MAP(0, 20), NRF_GPIO_PIN_PULLUP);
     atomic_set(&uart_ready, 0);
     /* No RX-ready notification: diagnostic TX is disabled. */
     p3_zcl_schedule_sync();
