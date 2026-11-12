@@ -128,7 +128,7 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Enforce build 41.3 motor, positioning and hardware calibration
+      - name: Verify v42.0-11 UART-off diagnostic build
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
@@ -168,7 +168,9 @@ jobs:
             fi
           done
           grep -qx '^CONFIG_P3_ZCL_POSITION_ENABLE=y' "$cfg"
-          grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg"
+          grep -qx '^CONFIG_P3_UART_DIAGNOSTIC_OFF=y' "$cfg"
+          if grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg"; then echo '::error::UART TX unexpectedly enabled'; exit 1; fi
+          grep -A 20 'uart@40002000' build-nicenano/zephyr/zephyr.dts | grep -q 'status = "disabled"'
           grep -qx '^CONFIG_P3_ZCL_BATTERY_ENABLE=y' "$cfg"
           grep -qx '^CONFIG_P3_POSITION_TARGET_ENABLE=y' "$cfg"
           grep -q 'tuya_uart_submit_position(percent)' app/src/main.c
@@ -176,7 +178,7 @@ jobs:
           grep -qx '^CONFIG_SETTINGS_NVS=y' "$cfg"
           grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
-          echo "v42.0-11 CONFIG PASS: OPEN/CLOSE/STOP, DP2 percentage setpoint, DP3 feedback and DP13 battery enabled."
+          echo "v42.0-11 CONFIG PASS: UART peripheral disabled, motor worker stubbed, Zigbee retained."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -190,22 +192,6 @@ jobs:
             build-nicenano/zephyr/zephyr.hex
           python3 app/tools/check_uf2_layout.py \
             build-nicenano/zephyr/zephyr.uf2 | tee diagnostic/uf2_report.txt
-
-      - name: Compile enabled motor/Zigbee feedback variant (not flash-ready)
-        if: steps.build.outcome == 'success'
-        working-directory: workspace
-        run: |
-          set -euo pipefail
-          west build -b nicenano_zigbee/nrf52840 \
-            -d "$GITHUB_WORKSPACE/build-nicenano-bench" \
-            --pristine=always --no-sysbuild \
-            "$GITHUB_WORKSPACE/app" -- \
-            "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
-            "-DEXTRA_CONF_FILE=$GITHUB_WORKSPACE/app/tests/p3_bench_features.conf"
-          grep '^CONFIG_P3_UART_TX_ENABLE=y' "$GITHUB_WORKSPACE/build-nicenano-bench/zephyr/.config"
-          grep '^CONFIG_P3_ZCL_POSITION_ENABLE=y' "$GITHUB_WORKSPACE/build-nicenano-bench/zephyr/.config"
-          grep '^CONFIG_P3_ZCL_BATTERY_ENABLE=y' "$GITHUB_WORKSPACE/build-nicenano-bench/zephyr/.config"
-          echo "BENCH CONFIG COMPILED ONLY; no flashable artifact uploaded."
 
       - name: Save diagnostic configuration
         if: always()
