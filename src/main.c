@@ -125,7 +125,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {6, '4', '2', '.', '0', '-', '9'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '1', '0'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -583,6 +583,19 @@ static bool p3_hw_cal_execute(zb_uint8_t command)
 static const struct gpio_dt_spec p3_cal_button =
     GPIO_DT_SPEC_GET(DT_ALIAS(calibration_button), gpios);
 static atomic_t p3_cal_button_ready;
+/* v42.0-10: GPIO edge wakes the button thread; no 20 ms idle polling. */
+K_SEM_DEFINE(p3_button_edge_sem, 0, 1);
+static struct gpio_callback p3_button_gpio_cb;
+
+static void p3_button_gpio_isr(const struct device *port,
+                               struct gpio_callback *cb, uint32_t pins)
+{
+    ARG_UNUSED(port);
+    ARG_UNUSED(cb);
+    ARG_UNUSED(pins);
+    k_sem_give(&p3_button_edge_sem);
+}
+
 
 static void p3_button_event(uint8_t event)
 {
@@ -602,6 +615,13 @@ static void p3_cal_button_thread(void *a, void *b, void *c)
     while (!atomic_get(&p3_cal_button_ready)) k_msleep(50);
 
     for (;;) {
+        /* Wait indefinitely when idle. During an active press or click
+         * sequence, retain the original 20 ms debounce and timing logic.
+         * GPIO edges wake the thread for the first press.
+         */
+        if (!stable_pressed && !candidate_pressed && clicks == 0U) {
+            k_sem_take(&p3_button_edge_sem, K_FOREVER);
+        }
         const int read = gpio_pin_get_dt(&p3_cal_button);
         const uint32_t now = k_uptime_get_32();
         if (read < 0) { k_msleep(20); continue; }
@@ -689,7 +709,9 @@ static void p3_cal_button_thread(void *a, void *b, void *c)
             }
             clicks = 0U;
         }
-        k_msleep(20);
+        if (stable_pressed || candidate_pressed || clicks != 0U) {
+            k_msleep(20);
+        }
     }
 }
 K_THREAD_DEFINE(p3_button_tid, 1024, p3_cal_button_thread,
@@ -706,8 +728,16 @@ static void p3_cal_button_init(void)
         LOG_ERR("P3 local calibration GPIO configuration failed");
         return;
     }
+    gpio_init_callback(&p3_button_gpio_cb, p3_button_gpio_isr,
+                       BIT(p3_cal_button.pin));
+    if (gpio_add_callback(p3_cal_button.port, &p3_button_gpio_cb) != 0 ||
+        gpio_pin_interrupt_configure_dt(&p3_cal_button,
+                                        GPIO_INT_EDGE_BOTH) != 0) {
+        LOG_ERR("P3 local calibration GPIO interrupt setup failed");
+        return;
+    }
     atomic_set(&p3_cal_button_ready, 1);
-    LOG_INF("P3 local calibration input active");
+    LOG_INF("P3 local calibration input active (GPIO edge wake)");
 }
 
 static void covering_device_callback(zb_bufid_t bufid)
@@ -858,7 +888,7 @@ int main(void)
      * Higher power draw is expected; restore build 39 to compare.
      */
     zigbee_configure_sleepy_behavior(true);
-    LOG_INF("P3 v42.0-9: sleepy Zigbee receiver, 5000 ms parent polling");
+    LOG_INF("P3 v42.0-10: Zigbee poll 5s, GPIO edge calibration button");
 
     zigbee_enable();
     atomic_set(&zigbee_started, 1);
