@@ -10,8 +10,9 @@ on:
       - experiment/v42-0-8-zigbee-poll-1s
       - experiment/v42-0-9-zigbee-poll-5s
       - experiment/v42-0-10-button-irq
-      - experiment/v42-0-13-uart-power-management
-      - experiment/v42-0-13-uarte-stop
+      - experiment/v42-0-14-uart-power-management
+      - experiment/v42-0-14-uarte-stop
+      - experiment/v42-0-14-uart-gpio-isolation
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -129,14 +130,16 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Verify v42.0-13 UART hardware stop diagnostic
+      - name: Verify v42.0-14 UART hardware stop diagnostic
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           grep -q "nrf_uarte_task_trigger(NRF_UARTE0, NRF_UARTE_TASK_STOPRX)" app/src/tuya_uart.c
           grep -q "nrf_uarte_disable(NRF_UARTE0)" app/src/tuya_uart.c
+          grep -q "nrf_gpio_cfg_input(NRF_GPIO_PIN_MAP(0, 17), NRF_GPIO_PIN_PULLUP)" app/src/tuya_uart.c
+          grep -q "nrf_gpio_cfg_input(NRF_GPIO_PIN_MAP(0, 20), NRF_GPIO_PIN_PULLUP)" app/src/tuya_uart.c
           cfg=build-nicenano/zephyr/.config
-          echo "=== v42.0-13 power configuration diagnostics ==="
+          echo "=== v42.0-14 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
           for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
             if ! grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -179,7 +182,7 @@ jobs:
           grep -qx '^CONFIG_SETTINGS_NVS=y' "$cfg"
           if grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"; then echo '::error::Calibration must be off'; exit 1; fi
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
-          echo "v42.0-13 CONFIG PASS: OPEN/CLOSE/STOP, DP2 percentage setpoint, DP3 feedback and DP13 battery enabled."
+          echo "v42.0-14 CONFIG PASS: OPEN/CLOSE/STOP, DP2 percentage setpoint, DP3 feedback and DP13 battery enabled."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -215,23 +218,23 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-13 experimental UF2
+      - name: Package P3-NRF52840 v42.0-14 experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-13-UART-RX-PARK.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-14-UART-RX-PARK.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-13-UART-RX-PARK.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-13-UART-RX-PARK.uf2
+            sha256sum P3-NRF52840-v42-0-14-UART-RX-PARK.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-14-UART-RX-PARK.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-13-UART-RX-PARK.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-14-UART-RX-PARK.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-13 — EXPERIMENTAL UART RX PARK (NOT FULL POWER MANAGEMENT)
+          P3-NRF52840 v42.0-14 — EXPERIMENTAL UART RX PARK (NOT FULL POWER MANAGEMENT)
 
           Target: HW-954 nRF52840 nice!nano-compatible board.
           Zigbee: End Device, endpoint 10.
@@ -256,11 +259,11 @@ jobs:
           Verify SHA256SUMS.txt and SOURCE_COMMIT.txt against this build.
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-13 experimental UF2
+      - name: Upload P3-NRF52840 v42.0-14 experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-13-UART-RX-Park-UF2
+          name: P3-NRF52840-v42-0-14-UART-RX-Park-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
