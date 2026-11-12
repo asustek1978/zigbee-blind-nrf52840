@@ -64,6 +64,9 @@
 #define P3_LOCAL_FINISH_QUEUED 0xF11CU
 #define P3_LOCAL_FINISH_TX 0xF11DU
 #define P3_LOCAL_FINISH_TX_DELAY_MS 0xF11EU
+#define P3_UART_INIT_RC 0xF11FU
+#define P3_UART_DEINIT_RC 0xF120U
+#define P3_UART_TEST_PHASE 0xF121U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -99,6 +102,9 @@ struct blind_device_context {
     zb_uint32_t diag_zigbee_to_tx_ms;
     zb_uint32_t diag_queue_to_tx_ms;
     zb_uint32_t diag_uart_tx_ms;
+    zb_uint32_t uart_init_rc;
+    zb_uint32_t uart_deinit_rc;
+    zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
     zb_uint32_t diag_rejected_frames;
@@ -125,7 +131,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '1', '7'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '1', '8'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -311,6 +317,9 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_LOCAL_FINISH_PRESSES, &blind_ctx.diag_local_finish_pre
 ZB_ZCL_SET_ATTR_DESC_M(P3_LOCAL_FINISH_QUEUED, &blind_ctx.diag_local_finish_queued, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_LOCAL_FINISH_TX, &blind_ctx.diag_local_finish_tx, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_LOCAL_FINISH_TX_DELAY_MS, &blind_ctx.diag_local_finish_tx_delay_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_UART_INIT_RC, &blind_ctx.uart_init_rc, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_UART_DEINIT_RC, &blind_ctx.uart_deinit_rc, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_UART_TEST_PHASE, &blind_ctx.uart_test_phase, ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -876,6 +885,9 @@ int main(void)
             LOG_ERR("P3 calibration settings unavailable: %d", settings_err);
         }
     }
+    blind_ctx.uart_init_rc = 0x7FFFFFFFU;
+    blind_ctx.uart_deinit_rc = 0x7FFFFFFFU;
+    blind_ctx.uart_test_phase = 0U;
     p3_cal_button_init();
     ZB_AF_REGISTER_DEVICE_CTX(&blind_device_ctx);
     initialize_attributes();
@@ -905,12 +917,19 @@ int main(void)
      */
     k_sleep(K_SECONDS(30));
     const struct device *uart = DEVICE_DT_GET(DT_NODELABEL(uart0));
-    int uart_err = device_init(uart);
-    if (uart_err == 0) {
+    blind_ctx.uart_test_phase = 1U; /* init attempted */
+    int init_rc = device_init(uart);
+    blind_ctx.uart_init_rc = (uint32_t)(int32_t)init_rc;
+    if (init_rc == 0) {
+        blind_ctx.uart_test_phase = 2U; /* UART initialized */
         k_sleep(K_SECONDS(3));
-        uart_err = device_deinit(uart);
+        blind_ctx.uart_test_phase = 3U; /* deinit attempted */
+        int deinit_rc = device_deinit(uart);
+        blind_ctx.uart_deinit_rc = (uint32_t)(int32_t)deinit_rc;
+        blind_ctx.uart_test_phase = 4U; /* deinit returned */
+    } else {
+        blind_ctx.uart_test_phase = 5U; /* init failed, no deinit */
     }
-    /* Zigbee Basic SWBuildId identifies the test; no motor commands. */
-    ARG_UNUSED(uart_err);
+    /* Diagnostic only: no HFCLK forcing or raw UARTE register writes. */
     return 0;
 }
