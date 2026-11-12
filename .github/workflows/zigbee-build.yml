@@ -144,11 +144,14 @@ jobs:
           grep -q 'zephyr,deferred-init;' app/app.overlay
           python3 - <<'PY'
           from pathlib import Path
-          import re
           dts = Path('build-nicenano/zephyr/zephyr.dts').read_text()
-          node = re.search(r'\\buart@40002000\\s*\\{([^}]*)\\}', dts, re.S)
-          if not node or 'zephyr,deferred-init;' not in node.group(1):
-              raise SystemExit('::error::UART0 deferred-init missing in generated DTS')
+          node_start = dts.find('uart0: uart@40002000 {')
+          if node_start < 0:
+              raise SystemExit('::error::UART0 node missing in generated DTS')
+          node_end = dts.find('};', node_start)
+          node = dts[node_start:node_end]
+          if 'zephyr,deferred-init;' not in node or 'status = "okay";' not in node:
+              raise SystemExit('::error::UART0 is not enabled with deferred-init')
           print('UART0 DeviceTree deferred-init: confirmed')
           PY
           cfg=build-nicenano/zephyr/.config
