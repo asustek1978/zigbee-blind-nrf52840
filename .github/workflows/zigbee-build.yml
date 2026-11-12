@@ -14,6 +14,7 @@ on:
       - experiment/v42-0-13-uarte-stop
       - experiment/v42-0-14-uart-gpio-isolation
       - experiment/v42-0-15-uart-driver-isolation
+      - experiment/v42-0-16-uart-deferred-init
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -131,7 +132,7 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Verify v42.0-15 UART driver isolation
+      - name: Verify v42.0-16 UART driver isolation
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
@@ -140,8 +141,18 @@ jobs:
             echo '::error::UART worker still compiled'
             exit 1
           fi
+          grep -q 'zephyr,deferred-init;' app/app.overlay
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          dts = Path('build-nicenano/zephyr/zephyr.dts').read_text()
+          node = re.search(r'\\buart@40002000\\s*\\{([^}]*)\\}', dts, re.S)
+          if not node or 'zephyr,deferred-init;' not in node.group(1):
+              raise SystemExit('::error::UART0 deferred-init missing in generated DTS')
+          print('UART0 DeviceTree deferred-init: confirmed')
+          PY
           cfg=build-nicenano/zephyr/.config
-          echo "=== v42.0-15 power configuration diagnostics ==="
+          echo "=== v42.0-16 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
           for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
             if ! grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -185,7 +196,7 @@ jobs:
           if grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"; then echo '::error::Calibration must be off'; exit 1; fi
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
           grep -q 'status = "okay";' app/boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts
-          echo "v42.0-15 CONFIG PASS: UART0 driver enabled, UART worker excluded, motor TX disabled."
+          echo "v42.0-16 CONFIG PASS: UART0 driver enabled, UART worker excluded, motor TX disabled."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -221,38 +232,37 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-15 experimental UF2
+      - name: Package P3-NRF52840 v42.0-16 experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-15-UART-DRIVER-ISOLATION.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-16-UART-DEFERRED-INIT.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-15-UART-DRIVER-ISOLATION.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-15-UART-DRIVER-ISOLATION.uf2
+            sha256sum P3-NRF52840-v42-0-16-UART-DEFERRED-INIT.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-16-UART-DEFERRED-INIT.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-15-UART-DRIVER-ISOLATION.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-16-UART-DEFERRED-INIT.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-15 — UART DRIVER ISOLATION (BENCH ONLY)
-          SWBuildId: 42.0-15
-          UART0 remains enabled in DeviceTree, but the application UART
-          worker is excluded and all motor commands are rejected.
-          No UART receive, transmit, calibration, or motor operation.
-          Use only on the spare HW-954 with motor disconnected.
-          Production v41.3 is unchanged. This build has not been
-          electrically validated; measure current and test Zigbee.
-          Verify SHA256SUMS.txt and SOURCE_COMMIT.txt.
+          P3-NRF52840 v42.0-16 — UART DEFERRED INIT (BENCH ONLY)
+          SWBuildId: 42.0-16
+          UART0 remains enabled but its driver initialization is deferred
+          by zephyr,deferred-init. Application never calls device_init().
+          Motor UART worker and all motor commands are disabled.
+          Do not connect motor or UART wires. Spare HW-954 only.
+          Build success alone does not prove current reduction.
+          Production v41.3 remains untouched.
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-15 experimental UF2
+      - name: Upload P3-NRF52840 v42.0-16 experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-15-UART-Driver-Isolation-UF2
+          name: P3-NRF52840-v42-0-16-UART-Deferred-Init-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
