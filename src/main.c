@@ -125,7 +125,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {4, '4', '1', '.', '3'};
+static zb_uint8_t blind_sw_build_id[] = {6, '4', '2', '.', '0', '-', '7'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -853,7 +853,7 @@ int main(void)
      * Higher power draw is expected; restore build 39 to compare.
      */
     zigbee_configure_sleepy_behavior(true);
-    LOG_INF("P3 build 41: sleepy Zigbee receiver restored");
+    LOG_INF("P3 v42.0-7: sleepy Zigbee receiver with Zephyr PM");
 
     zigbee_enable();
     atomic_set(&zigbee_started, 1);
