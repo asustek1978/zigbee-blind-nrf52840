@@ -1,6 +1,8 @@
 /* v42.0-6: Zephyr idle-current test; SPARE BOARD ONLY.
  * No Zigbee, no motor control, no System OFF.
  * The kernel idle thread may enter System ON low-power sleep.
+ * Measurement baseline: v41.3 draws 1.54 mA on the spare board with red LED removed.
+ * Measure after 30-60 seconds on battery, with USB disconnected.
  */
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
