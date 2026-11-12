@@ -163,7 +163,7 @@ jobs:
           print('UART0 DeviceTree deferred-init: confirmed')
           PY
           cfg=build-nicenano/zephyr/.config
-          grep -qx '^CONFIG_PM_DEVICE=y' "$cfg"
+          grep -qx '^CONFIG_PM_DEVICE=y' "$cfg" || { echo '::error::CONFIG_PM_DEVICE is not enabled'; exit 1; }
           grep -q 'device_init(uart)' app/src/main.c
           grep -q 'PM_DEVICE_ACTION_SUSPEND' app/src/main.c
           grep -q 'PM_DEVICE_ACTION_RESUME' app/src/main.c
@@ -188,7 +188,7 @@ jobs:
           grep -q '0x55U, 0xAAU, 0x00U, 0x08U, 0x00U, 0x00U, 0x07U' app/src/main.c
           grep -q 'blind_ctx.stress_tx_bytes++' app/src/main.c
           test "$(grep -c 'uart_poll_out(uart,' app/src/main.c)" -eq 1
-          grep -qx '^CONFIG_P3_UART_TX_ENABLE=n' "$cfg"
+          if grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg"; then echo '::error::Motor command TX must remain disabled'; exit 1; fi
           grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
           echo "=== v42.0-25 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
