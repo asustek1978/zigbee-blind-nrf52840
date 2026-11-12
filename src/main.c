@@ -75,6 +75,17 @@
 #define P3_UART_RX_BYTE 0xF125U
 #define P3_UART_RX_ATTEMPTS 0xF126U
 #define P3_UART_RX_WAIT_MS 0xF127U
+#define P3_STRESS_CYCLES 0xF128U
+#define P3_STRESS_OK 0xF129U
+#define P3_STRESS_FAILED 0xF12AU
+#define P3_STRESS_TX_BYTES 0xF12BU
+#define P3_STRESS_RX_BYTES 0xF12CU
+#define P3_STRESS_MISMATCH 0xF12DU
+#define P3_STRESS_RX_TIMEOUT 0xF12EU
+#define P3_STRESS_RESUME_ERR 0xF12FU
+#define P3_STRESS_SUSPEND_ERR 0xF130U
+#define P3_STRESS_MAX_RX_MS 0xF131U
+#define P3_STRESS_ELAPSED_S 0xF132U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -118,6 +129,17 @@ struct blind_device_context {
     zb_uint8_t uart_rx_byte;
     zb_uint32_t uart_rx_attempts;
     zb_uint32_t uart_rx_wait_ms;
+    zb_uint32_t stress_cycles;
+    zb_uint32_t stress_ok;
+    zb_uint32_t stress_failed;
+    zb_uint32_t stress_tx_bytes;
+    zb_uint32_t stress_rx_bytes;
+    zb_uint32_t stress_mismatch;
+    zb_uint32_t stress_rx_timeout;
+    zb_uint32_t stress_resume_err;
+    zb_uint32_t stress_suspend_err;
+    zb_uint32_t stress_max_rx_ms;
+    zb_uint32_t stress_elapsed_s;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -145,7 +167,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '2', '1'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '2', '2'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -340,6 +362,17 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_UART_RX_RC, &blind_ctx.uart_rx_rc, ZB_ZCL_ATTR_TYPE_U3
 ZB_ZCL_SET_ATTR_DESC_M(P3_UART_RX_BYTE, &blind_ctx.uart_rx_byte, ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_UART_RX_ATTEMPTS, &blind_ctx.uart_rx_attempts, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_UART_RX_WAIT_MS, &blind_ctx.uart_rx_wait_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_STRESS_CYCLES, &blind_ctx.stress_cycles, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_STRESS_OK, &blind_ctx.stress_ok, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_STRESS_FAILED, &blind_ctx.stress_failed, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_STRESS_TX_BYTES, &blind_ctx.stress_tx_bytes, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_STRESS_RX_BYTES, &blind_ctx.stress_rx_bytes, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_STRESS_MISMATCH, &blind_ctx.stress_mismatch, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_STRESS_RX_TIMEOUT, &blind_ctx.stress_rx_timeout, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_STRESS_RESUME_ERR, &blind_ctx.stress_resume_err, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_STRESS_SUSPEND_ERR, &blind_ctx.stress_suspend_err, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_STRESS_MAX_RX_MS, &blind_ctx.stress_max_rx_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_STRESS_ELAPSED_S, &blind_ctx.stress_elapsed_s, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -936,63 +969,105 @@ int main(void)
             BLIND_ENDPOINT, IS_ENABLED(CONFIG_P3_UART_TX_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_POSITION_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_BATTERY_ENABLE));
-    /* v42.0-20 BENCH ONLY: optional 3.3V TX(P0.20)-RX(P0.17)
-     * jumper on spare HW-954. NEVER connect the P3 motor.
-     * One byte 0xA5 is sent after RESUME, then polled on RX.
-     * A missing jumper produces RX -1; this is expected and harmless.
-     * No periodic UART wakeups or Zigbee motor commands are enabled.
+    /* v42.0-22: 20-minute loopback stress test on SPARE HW-954 ONLY.
+     * P0.20 TX -> P0.17 RX jumper, no motor, no external 3.3V.
+     * Each cycle sends eight sequence-dependent bytes, checks exact RX.
+     * Each byte has a bounded 20ms poll; UART is PM-suspended between cycles.
+     * 240 cycles at 5s spacing, starting 30s after boot.
+     * No UART operations after the test has finished.
      */
     k_sleep(K_SECONDS(30));
     const struct device *uart = DEVICE_DT_GET(DT_NODELABEL(uart0));
     blind_ctx.uart_test_phase = 1U;
     int rc = device_init(uart);
     blind_ctx.uart_init_rc = (uint32_t)(int32_t)rc;
-    if (rc == 0) {
-        blind_ctx.uart_test_phase = 2U;
-        k_sleep(K_SECONDS(3));
-        blind_ctx.uart_test_phase = 3U;
-        rc = pm_device_action_run(uart, PM_DEVICE_ACTION_SUSPEND);
-        blind_ctx.uart_deinit_rc = (uint32_t)(int32_t)rc;
-        if (rc == 0) {
-            blind_ctx.uart_test_phase = 4U;
-            k_sleep(K_SECONDS(15));
-            blind_ctx.uart_test_phase = 6U;
-            rc = pm_device_action_run(uart, PM_DEVICE_ACTION_RESUME);
-            blind_ctx.uart_resume_rc = (uint32_t)(int32_t)rc;
-            if (rc == 0) {
-                blind_ctx.uart_test_phase = 7U;
-                uint8_t received = 0U;
-                /* Clear any stale RX byte before the loopback transmission. */
-                while (uart_poll_in(uart, &received) == 0) {
-                    /* Drain the receive FIFO; bounded to avoid lockup. */
-                    if (++blind_ctx.uart_rx_attempts >= 32U) break;
-                }
-                blind_ctx.uart_rx_attempts = 0U;
-                uint32_t started = k_uptime_get_32();
-                uart_poll_out(uart, 0xA5U);
-                int rx_rc = -1;
-                do {
-                    blind_ctx.uart_rx_attempts++;
-                    rx_rc = uart_poll_in(uart, &received);
-                    if (rx_rc == 0) break;
-                    k_sleep(K_MSEC(1));
-                } while ((uint32_t)(k_uptime_get_32() - started) < 100U);
-                blind_ctx.uart_rx_wait_ms = k_uptime_get_32() - started;
-                blind_ctx.uart_rx_rc = (uint32_t)(int32_t)rx_rc;
-                blind_ctx.uart_rx_byte = (rx_rc == 0) ? received : 0U;
-                k_sleep(K_SECONDS(3));
-                blind_ctx.uart_test_phase = 8U;
-                rc = pm_device_action_run(uart, PM_DEVICE_ACTION_SUSPEND);
-                blind_ctx.uart_suspend2_rc = (uint32_t)(int32_t)rc;
-                blind_ctx.uart_test_phase = (rc == 0) ? 9U : 10U;
-            } else {
-                blind_ctx.uart_test_phase = 11U;
-            }
-        } else {
-            blind_ctx.uart_test_phase = 12U;
-        }
-    } else {
+    if (rc != 0) {
         blind_ctx.uart_test_phase = 5U;
+        return 0;
+    }
+    blind_ctx.uart_test_phase = 2U;
+    rc = pm_device_action_run(uart, PM_DEVICE_ACTION_SUSPEND);
+    blind_ctx.uart_deinit_rc = (uint32_t)(int32_t)rc;
+    if (rc != 0) {
+        blind_ctx.uart_test_phase = 12U;
+        return 0;
+    }
+    blind_ctx.uart_test_phase = 4U;
+    const uint32_t test_started = k_uptime_get_32();
+    const uint32_t interval_ms = 5000U;
+    for (uint32_t cycle = 0U; cycle < 240U; ++cycle) {
+        uint32_t scheduled = test_started + cycle * interval_ms;
+        int32_t remaining = (int32_t)(scheduled - k_uptime_get_32());
+        if (remaining > 0) k_sleep(K_MSEC(remaining));
+        blind_ctx.uart_test_phase = 6U;
+        rc = pm_device_action_run(uart, PM_DEVICE_ACTION_RESUME);
+        blind_ctx.uart_resume_rc = (uint32_t)(int32_t)rc;
+        if (rc != 0) {
+            blind_ctx.stress_resume_err++;
+            blind_ctx.stress_failed++;
+            blind_ctx.stress_cycles++;
+            blind_ctx.uart_test_phase = 11U;
+            /* Attempt recovery to suspended state; stop on PM failure. */
+            int sr = pm_device_action_run(uart, PM_DEVICE_ACTION_SUSPEND);
+            blind_ctx.uart_suspend2_rc = (uint32_t)(int32_t)sr;
+            if (sr != 0) blind_ctx.stress_suspend_err++;
+            break;
+        }
+        blind_ctx.uart_test_phase = 7U;
+        uint8_t received = 0U;
+        /* Discard stale RX data, bounded to 32 bytes. */
+        for (unsigned d = 0; d < 32U && uart_poll_in(uart, &received) == 0; ++d) {}
+        bool packet_ok = true;
+        for (uint32_t index = 0U; index < 8U; ++index) {
+            uint8_t expected = (uint8_t)(0xA5U ^ (uint8_t)cycle ^ (uint8_t)(index * 37U));
+            uint32_t byte_started = k_uptime_get_32();
+            uart_poll_out(uart, expected);
+            blind_ctx.stress_tx_bytes++;
+            int rx_rc = -1;
+            do {
+                blind_ctx.uart_rx_attempts++;
+                rx_rc = uart_poll_in(uart, &received);
+                if (rx_rc == 0) break;
+                k_sleep(K_MSEC(1));
+            } while ((uint32_t)(k_uptime_get_32() - byte_started) < 20U);
+            uint32_t elapsed = k_uptime_get_32() - byte_started;
+            if (elapsed > blind_ctx.stress_max_rx_ms) blind_ctx.stress_max_rx_ms = elapsed;
+            blind_ctx.uart_rx_rc = (uint32_t)(int32_t)rx_rc;
+            blind_ctx.uart_rx_wait_ms = elapsed;
+            if (rx_rc == 0) {
+                blind_ctx.stress_rx_bytes++;
+                blind_ctx.uart_rx_byte = received;
+                if (received != expected) {
+                    blind_ctx.stress_mismatch++;
+                    packet_ok = false;
+                }
+            } else {
+                blind_ctx.stress_rx_timeout++;
+                packet_ok = false;
+            }
+        }
+        blind_ctx.uart_test_phase = 8U;
+        rc = pm_device_action_run(uart, PM_DEVICE_ACTION_SUSPEND);
+        blind_ctx.uart_suspend2_rc = (uint32_t)(int32_t)rc;
+        if (rc != 0) {
+            blind_ctx.stress_suspend_err++;
+            packet_ok = false;
+        }
+        blind_ctx.stress_cycles++;
+        if (packet_ok) blind_ctx.stress_ok++;
+        else blind_ctx.stress_failed++;
+        blind_ctx.stress_elapsed_s = (k_uptime_get_32() - test_started) / 1000U;
+        if (rc != 0) {
+            blind_ctx.uart_test_phase = 10U;
+            break; /* Never leave UART running through subsequent cycles. */
+        }
+        blind_ctx.uart_test_phase = 4U;
+    }
+    blind_ctx.stress_elapsed_s = (k_uptime_get_32() - test_started) / 1000U;
+    if (blind_ctx.stress_cycles == 240U &&
+        blind_ctx.stress_resume_err == 0U &&
+        blind_ctx.stress_suspend_err == 0U) {
+        blind_ctx.uart_test_phase = 9U; /* finished; UART suspended */
     }
     return 0;
 }
