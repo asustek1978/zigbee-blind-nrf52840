@@ -18,3 +18,11 @@
         calibration-button = &calibration_button;
     };
 };
+
+/* v42.0-16 diagnostic: keep UART0 enabled, but defer its driver init.
+ * No device_init() call is made. Do not attach motor or UART wires.
+ * Supported only if this Zephyr SDK recognizes zephyr,deferred-init.
+ */
+&uart0 {
+    zephyr,deferred-init;
+};
