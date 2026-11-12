@@ -22,7 +22,7 @@ on:
       - experiment/v42-0-21-uart-loopback-timeout
       - experiment/v42-0-22-uart-20min-stress
       - experiment/v42-0-23-tuya-framing-pm-bench
-      - experiment/v42-0-25-p3-rx-only-windows
+      - experiment/v42-0-25-one-shot-status-tx
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
