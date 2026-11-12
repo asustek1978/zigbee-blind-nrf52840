@@ -125,7 +125,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {6, '4', '2', '.', '0', '-', '7'};
+static zb_uint8_t blind_sw_build_id[] = {6, '4', '2', '.', '0', '-', '8'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -799,6 +799,11 @@ void zboss_signal_handler(zb_bufid_t bufid)
     if (signal == ZB_BDB_SIGNAL_DEVICE_REBOOT ||
         signal == ZB_BDB_SIGNAL_STEERING) {
         if (signal_status == RET_OK) {
+            /* v42.0-8: set AFTER successful join/rejoin, since ZBOSS
+             * restores the default long-poll interval on joining.
+             * Units are milliseconds; poll parent every 1000 ms.
+             */
+            zb_zdo_pim_set_long_poll_interval(1000);
             set_join_status_led(true);  /* Joined/rejoined: blue LED OFF */
         } else {
             set_join_status_led(false); /* Not joined: show status */
@@ -853,7 +858,7 @@ int main(void)
      * Higher power draw is expected; restore build 39 to compare.
      */
     zigbee_configure_sleepy_behavior(true);
-    LOG_INF("P3 v42.0-7: sleepy Zigbee receiver with Zephyr PM");
+    LOG_INF("P3 v42.0-8: sleepy Zigbee receiver, 1000 ms parent polling");
 
     zigbee_enable();
     atomic_set(&zigbee_started, 1);
