@@ -4,6 +4,14 @@ source "Kconfig.zephyr"
 
 menu "P3 prototype features"
 
+config P3_UART_DIAGNOSTIC_OFF
+    bool "Bench test: completely disable motor UART peripheral and workers"
+    default n
+    help
+      Spare-board-only current measurement. Excludes UART worker sources
+      and replaces motor communication with inert stubs.
+
+
 config P3_UART_TX_ENABLE
     bool "ENABLE real Tuya P3 motor UART transmission (hardware test only)"
     default n
