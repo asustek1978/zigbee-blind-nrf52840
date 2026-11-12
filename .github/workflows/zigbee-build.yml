@@ -190,8 +190,13 @@ jobs:
           grep -q 'tuya_uart_submit_position(percent)' app/src/main.c
           grep -qx '^CONFIG_SETTINGS=y' "$cfg"
           grep -qx '^CONFIG_SETTINGS_NVS=y' "$cfg"
-          grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"
+          # Hardware calibration transmits motor UART frames and must be disabled.
+          if grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"; then
+            echo '::error::Hardware calibration unexpectedly enabled with UART OFF'
+            exit 1
+          fi
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
+          test -s app/src/tuya_uart_disabled.c
           echo "v42.0-11 CONFIG PASS: UART peripheral disabled, motor worker stubbed, Zigbee retained."
 
       - name: Convert HEX to UF2 and validate flash ranges
