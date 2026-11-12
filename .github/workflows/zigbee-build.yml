@@ -18,6 +18,7 @@ on:
       - experiment/v42-0-17-uart-init-deinit
       - experiment/v42-0-18-uart-power-recovery
       - experiment/v42-0-19-uart-pm-suspend-resume
+      - experiment/v42-0-20-uart-on-demand-bench
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -135,7 +136,7 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Verify v42.0-19 UART driver isolation
+      - name: Verify v42.0-20 UART driver isolation
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
@@ -166,8 +167,11 @@ jobs:
           grep -q 'P3_UART_DEINIT_RC 0xF120U' app/src/main.c
           grep -q 'P3_UART_RESUME_RC 0xF122U' app/src/main.c
           grep -q 'P3_UART_SUSPEND2_RC 0xF123U' app/src/main.c
+          grep -q 'P3_UART_RX_RC 0xF124U' app/src/main.c
+          grep -q 'P3_UART_RX_BYTE 0xF125U' app/src/main.c
+          grep -q 'uart_poll_out(uart, 0xA5U)' app/src/main.c
           grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
-          echo "=== v42.0-19 power configuration diagnostics ==="
+          echo "=== v42.0-20 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
           for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
             if ! grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -211,7 +215,7 @@ jobs:
           if grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"; then echo '::error::Calibration must be off'; exit 1; fi
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
           grep -q 'status = "okay";' app/boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts
-          echo "v42.0-19 CONFIG PASS: UART0 driver enabled, UART worker excluded, motor TX disabled."
+          echo "v42.0-20 CONFIG PASS: UART0 driver enabled, UART worker excluded, motor TX disabled."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -247,42 +251,44 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-19 experimental UF2
+      - name: Package P3-NRF52840 v42.0-20 experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-19-UART-PM-TEST.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-20-UART-ON-DEMAND.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-19-UART-PM-TEST.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-19-UART-PM-TEST.uf2
+            sha256sum P3-NRF52840-v42-0-20-UART-ON-DEMAND.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-20-UART-ON-DEMAND.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-19-UART-PM-TEST.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-20-UART-ON-DEMAND.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-19 UART DEVICE PM BENCH TEST
-          SWBuildId: 42.0-19. Spare HW-954 ONLY. No motor or UART wiring.
-          0-30s deferred-init baseline; 30-33s initialized;
-          33-48s PM SUSPEND; 48-51s PM RESUME; after 51s PM SUSPEND.
+          P3-NRF52840 v42.0-20 UART ON-DEMAND BENCH LOOPBACK
+          SWBuildId: 42.0-20. Spare HW-954 ONLY. NO MOTOR.
+          Optional jumper: P0.20 (TX) to P0.17 (RX), same board, 3.3V.
+          No other wiring. NEVER connect motor during this experiment.
+          0-30s baseline; 30-33s initialized; 33-48s PM SUSPEND;
+          48-51s PM RESUME, send ONE 0xA5 byte, poll RX;
+          after 51s PM SUSPEND again. No periodic wakeups.
           Zigbee Basic endpoint 10 private attributes:
-          0xF11F U32 init_rc; 0xF120 U32 first_suspend_rc;
-          0xF121 U8 phase; 0xF122 U32 resume_rc;
-          0xF123 U32 second_suspend_rc.
+          0xF11F init_rc; 0xF120 first_suspend_rc; 0xF121 phase;
+          0xF122 resume_rc; 0xF123 second_suspend_rc;
+          0xF124 uart_rx_rc (0 received, -1 no byte);
+          0xF125 uart_rx_byte (expected 165 if loopback succeeds).
           Return codes are signed int32 bits encoded as U32.
-          0x7FFFFFFF means not attempted. No direct HFCLK manipulation.
-          Phase: 4 first suspend OK; 7 resume OK; 9 second suspend OK;
-          5 init failed, 10 second suspend failed, 11 resume failed,
-          12 first suspend failed. v41.3 and v42.0-16 unchanged.
+          0x7FFFFFFF means not attempted. No forced HFCLK stop.
+          Zigbee motor commands remain disabled. v41.3 untouched.
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-19 experimental UF2
+      - name: Upload P3-NRF52840 v42.0-20 experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-19-UART-PM-Test-UF2
+          name: P3-NRF52840-v42-0-20-UART-On-Demand-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
