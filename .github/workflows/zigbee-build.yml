@@ -20,6 +20,7 @@ on:
       - experiment/v42-0-19-uart-pm-suspend-resume
       - experiment/v42-0-22-uart-on-demand-bench
       - experiment/v42-0-22-uart-loopback-timeout
+      - experiment/v42-0-21-uart-loopback-timeout
       - experiment/v42-0-22-uart-20min-stress
     paths:
       - '.github/workflows/zigbee-build.yml'
