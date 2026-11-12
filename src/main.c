@@ -7,6 +7,7 @@
  */
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
+#include <zephyr/pm/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
@@ -67,6 +68,8 @@
 #define P3_UART_INIT_RC 0xF11FU
 #define P3_UART_DEINIT_RC 0xF120U
 #define P3_UART_TEST_PHASE 0xF121U
+#define P3_UART_RESUME_RC 0xF122U
+#define P3_UART_SUSPEND2_RC 0xF123U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -104,6 +107,8 @@ struct blind_device_context {
     zb_uint32_t diag_uart_tx_ms;
     zb_uint32_t uart_init_rc;
     zb_uint32_t uart_deinit_rc;
+    zb_uint32_t uart_resume_rc;
+    zb_uint32_t uart_suspend2_rc;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -131,7 +136,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '1', '8'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '1', '9'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -320,6 +325,8 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_LOCAL_FINISH_TX_DELAY_MS, &blind_ctx.diag_local_finish
 ZB_ZCL_SET_ATTR_DESC_M(P3_UART_INIT_RC, &blind_ctx.uart_init_rc, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_UART_DEINIT_RC, &blind_ctx.uart_deinit_rc, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_UART_TEST_PHASE, &blind_ctx.uart_test_phase, ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_UART_RESUME_RC, &blind_ctx.uart_resume_rc, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_UART_SUSPEND2_RC, &blind_ctx.uart_suspend2_rc, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -887,6 +894,8 @@ int main(void)
     }
     blind_ctx.uart_init_rc = 0x7FFFFFFFU;
     blind_ctx.uart_deinit_rc = 0x7FFFFFFFU;
+    blind_ctx.uart_resume_rc = 0x7FFFFFFFU;
+    blind_ctx.uart_suspend2_rc = 0x7FFFFFFFU;
     blind_ctx.uart_test_phase = 0U;
     p3_cal_button_init();
     ZB_AF_REGISTER_DEVICE_CTX(&blind_device_ctx);
@@ -910,26 +919,43 @@ int main(void)
             BLIND_ENDPOINT, IS_ENABLED(CONFIG_P3_UART_TX_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_POSITION_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_BATTERY_ENABLE));
-    /* v42.0-17: one-shot bench test. Zigbee runs in its own threads.
-     * After 30 s baseline, init deferred UART0 for 3 s, then deinit.
-     * No UART data is transmitted and no motor must be connected.
-     * If deinit is unsupported, DO NOT use this build for power claims.
+    /* v42.0-19: no motor, no UART traffic, no HFCLK manipulation.
+     * 0-30s baseline, 30-33s initialized, 33-48s suspended,
+     * 48-51s resumed, after 51s suspended again.
+     * Read codes from Zigbee Basic private attributes.
      */
     k_sleep(K_SECONDS(30));
     const struct device *uart = DEVICE_DT_GET(DT_NODELABEL(uart0));
-    blind_ctx.uart_test_phase = 1U; /* init attempted */
-    int init_rc = device_init(uart);
-    blind_ctx.uart_init_rc = (uint32_t)(int32_t)init_rc;
-    if (init_rc == 0) {
-        blind_ctx.uart_test_phase = 2U; /* UART initialized */
+    blind_ctx.uart_test_phase = 1U;
+    int rc = device_init(uart);
+    blind_ctx.uart_init_rc = (uint32_t)(int32_t)rc;
+    if (rc == 0) {
+        blind_ctx.uart_test_phase = 2U;
         k_sleep(K_SECONDS(3));
-        blind_ctx.uart_test_phase = 3U; /* deinit attempted */
-        int deinit_rc = device_deinit(uart);
-        blind_ctx.uart_deinit_rc = (uint32_t)(int32_t)deinit_rc;
-        blind_ctx.uart_test_phase = 4U; /* deinit returned */
+        blind_ctx.uart_test_phase = 3U;
+        rc = pm_device_action_run(uart, PM_DEVICE_ACTION_SUSPEND);
+        blind_ctx.uart_deinit_rc = (uint32_t)(int32_t)rc;
+        if (rc == 0) {
+            blind_ctx.uart_test_phase = 4U;
+            k_sleep(K_SECONDS(15));
+            blind_ctx.uart_test_phase = 6U;
+            rc = pm_device_action_run(uart, PM_DEVICE_ACTION_RESUME);
+            blind_ctx.uart_resume_rc = (uint32_t)(int32_t)rc;
+            if (rc == 0) {
+                blind_ctx.uart_test_phase = 7U;
+                k_sleep(K_SECONDS(3));
+                blind_ctx.uart_test_phase = 8U;
+                rc = pm_device_action_run(uart, PM_DEVICE_ACTION_SUSPEND);
+                blind_ctx.uart_suspend2_rc = (uint32_t)(int32_t)rc;
+                blind_ctx.uart_test_phase = (rc == 0) ? 9U : 10U;
+            } else {
+                blind_ctx.uart_test_phase = 11U;
+            }
+        } else {
+            blind_ctx.uart_test_phase = 12U;
+        }
     } else {
-        blind_ctx.uart_test_phase = 5U; /* init failed, no deinit */
+        blind_ctx.uart_test_phase = 5U;
     }
-    /* Diagnostic only: no HFCLK forcing or raw UARTE register writes. */
     return 0;
 }
