@@ -23,6 +23,7 @@ on:
       - experiment/v42-0-22-uart-20min-stress
       - experiment/v42-0-23-tuya-framing-pm-bench
       - experiment/v42-0-25-one-shot-status-tx
+      - experiment/v42-0-26-status-response-diagnostics
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -183,10 +184,12 @@ jobs:
           grep -q 'tuya_parser_feed(&parser' app/src/main.c
           grep -q 'P3_TUYA_FRAMES_OK 0xF133U' app/src/main.c
           grep -q 'uart_poll_in(uart, &received)' app/src/main.c
-          # Permit exactly one hard-coded 7-byte status query on cycle 0.
+          # v42.0-26: permit one hard-coded 7-byte status query on cycle 0.
           grep -q 'if (cycle == 0U)' app/src/main.c
           grep -q '0x55U, 0xAAU, 0x00U, 0x08U, 0x00U, 0x00U, 0x07U' app/src/main.c
           grep -q 'blind_ctx.stress_tx_bytes++' app/src/main.c
+          grep -q 'blind_ctx.diag_last_command = decoded.command' app/src/main.c
+          grep -q 'blind_ctx.diag_rx_after_tx_ms =' app/src/main.c
           test "$(grep -c 'uart_poll_out(uart,' app/src/main.c)" -eq 1
           if grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg"; then echo '::error::Motor command TX must remain disabled'; exit 1; fi
           grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
