@@ -10,9 +10,9 @@ on:
       - experiment/v42-0-8-zigbee-poll-1s
       - experiment/v42-0-9-zigbee-poll-5s
       - experiment/v42-0-10-button-irq
-      - experiment/v42-0-15-uart-power-management
-      - experiment/v42-0-15-uarte-stop
-      - experiment/v42-0-15-uart-gpio-isolation
+      - experiment/v42-0-12-uart-power-management
+      - experiment/v42-0-13-uarte-stop
+      - experiment/v42-0-14-uart-gpio-isolation
       - experiment/v42-0-15-uart-driver-isolation
     paths:
       - '.github/workflows/zigbee-build.yml'
@@ -131,12 +131,16 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Verify v42.0-15 UART hardware stop diagnostic
+      - name: Verify v42.0-15 UART driver isolation
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           grep -q 'src/tuya_uart_isolated.c' app/CMakeLists.txt
-          if grep -qE '^  src/tuya_uart\\.c
+          if grep -qF '  src/tuya_uart.c' app/CMakeLists.txt; then
+            echo '::error::UART worker still compiled'
+            exit 1
+          fi
+          cfg=build-nicenano/zephyr/.config
           echo "=== v42.0-15 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
           for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
@@ -233,36 +237,22 @@ jobs:
           )
           python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-15-UART-DRIVER-ISOLATION.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-15 — EXPERIMENTAL UART RX PARK (NOT FULL POWER MANAGEMENT)
-
-          Target: HW-954 nRF52840 nice!nano-compatible board.
-          Zigbee: End Device, endpoint 10.
-          Firmware SWBuildID (ZCL Basic 0x4000): 42.0-12.
-
-          Verified on the user's physical roller blind:
-          OPEN, CLOSE, STOP, 0–100% position control, local button,
-          physical end-stop calibration and persistence after power cycle.
-          Zigbee2MQTT can read genBasic.swBuildId = 41.3.
-
-          SAFETY: UART TX and hardware calibration are disabled. UART RX interrupt is parked; motor reports cannot be received.
-          Disconnect motor power and UART while flashing via USB.
-          Verify 3.3 V logic levels, shared GND and no conflicting drivers.
-          Keep the physical STOP accessible and retain the known-good UF2.
-          After updating, test STOP before unattended operation.
-
-          The external Zigbee2MQTT converter exposes cover and battery only;
-          calibration and diagnostics are intentionally hidden in the UI.
-          EXPERIMENT: UART device initialized but RX IRQ parked, no runtime UART peripheral suspend. Tickless enabled, logging disabled.\n          Current draw has NOT been validated. This is not a motor-ready build.\n          Use only on the spare board. Do NOT flash installed blinds.
-          This UF2 does not support Zigbee OTA firmware updates.
-
-          Verify SHA256SUMS.txt and SOURCE_COMMIT.txt against this build.
+          P3-NRF52840 v42.0-15 — UART DRIVER ISOLATION (BENCH ONLY)
+          SWBuildId: 42.0-15
+          UART0 remains enabled in DeviceTree, but the application UART
+          worker is excluded and all motor commands are rejected.
+          No UART receive, transmit, calibration, or motor operation.
+          Use only on the spare HW-954 with motor disconnected.
+          Production v41.3 is unchanged. This build has not been
+          electrically validated; measure current and test Zigbee.
+          Verify SHA256SUMS.txt and SOURCE_COMMIT.txt.
           EOF
 
       - name: Upload P3-NRF52840 v42.0-15 experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-15-UART-RX-Park-UF2
+          name: P3-NRF52840-v42-0-15-UART-Driver-Isolation-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
