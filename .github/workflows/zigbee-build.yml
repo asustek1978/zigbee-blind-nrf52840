@@ -16,6 +16,7 @@ on:
       - experiment/v42-0-15-uart-driver-isolation
       - experiment/v42-0-16-uart-deferred-init
       - experiment/v42-0-17-uart-init-deinit
+      - experiment/v42-0-18-uart-power-recovery
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -133,7 +134,7 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Verify v42.0-17 UART driver isolation
+      - name: Verify v42.0-18 UART driver isolation
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
@@ -159,7 +160,10 @@ jobs:
           grep -qx '^CONFIG_DEVICE_DEINIT_SUPPORT=y' "$cfg"
           grep -q 'device_init(uart)' app/src/main.c
           grep -q 'device_deinit(uart)' app/src/main.c
-          echo "=== v42.0-17 power configuration diagnostics ==="
+          grep -q 'P3_UART_INIT_RC 0xF11FU' app/src/main.c
+          grep -q 'P3_UART_DEINIT_RC 0xF120U' app/src/main.c
+          grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
+          echo "=== v42.0-18 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
           for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
             if ! grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -203,7 +207,7 @@ jobs:
           if grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"; then echo '::error::Calibration must be off'; exit 1; fi
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
           grep -q 'status = "okay";' app/boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts
-          echo "v42.0-17 CONFIG PASS: UART0 driver enabled, UART worker excluded, motor TX disabled."
+          echo "v42.0-18 CONFIG PASS: UART0 driver enabled, UART worker excluded, motor TX disabled."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -239,38 +243,40 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-17 experimental UF2
+      - name: Package P3-NRF52840 v42.0-18 experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-17-UART-INIT-DEINIT.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-18-UART-POWER-RECOVERY.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-17-UART-INIT-DEINIT.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-17-UART-INIT-DEINIT.uf2
+            sha256sum P3-NRF52840-v42-0-18-UART-POWER-RECOVERY.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-18-UART-POWER-RECOVERY.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-17-UART-INIT-DEINIT.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-18-UART-POWER-RECOVERY.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-17 UART INIT/DEINIT BENCH TEST
-          SWBuildId: 42.0-17
-          0-30s: deferred UART0 uninitialized (baseline).
-          30-33s: explicit UART0 device_init(), no UART traffic.
-          After 33s: device_deinit() attempted; measure steady current.
-          No runtime error reporting is provided; a failed deinit may
-          leave UART initialized. Do not infer success from current alone.
-          Motor TX worker is excluded. No motor or UART wires connected.
-          Production v41.3 and v42.0-16 unchanged.
+          P3-NRF52840 v42.0-18 UART POWER RECOVERY DIAGNOSTICS
+          SWBuildId: 42.0-18
+          0-30s baseline, 30-33s init, after 33s deinit attempted.
+          Zigbee Basic endpoint 10 private attributes:
+          0xF11F (U32): device_init return code, signed int32 bits
+          0xF120 (U32): device_deinit return code, signed int32 bits
+          0xF121 (U8): phase 0 waiting, 1 init, 2 initialized,
+                       3 deinit, 4 deinit returned, 5 init failed.
+          0x7FFFFFFF = not attempted. Negative errno encoded as U32.
+          No forced HFCLK stop. No motor/UART wires connected.
+          Production v41.3 and baseline v42.0-16 unchanged.
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-17 experimental UF2
+      - name: Upload P3-NRF52840 v42.0-18 experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-17-UART-Init-Deinit-UF2
+          name: P3-NRF52840-v42-0-18-UART-Power-Recovery-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
