@@ -172,7 +172,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '2', '4'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '2', '5'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -1010,6 +1010,20 @@ int main(void)
             blind_ctx.uart_suspend2_rc = (uint32_t)(int32_t)sr;
             if (sr != 0) blind_ctx.stress_suspend_err++;
             break;
+        }
+        /* v42.0-25: ONE status query only, first RX window after boot.
+         * Classic Tuya 55 AA 00 08 00 00 07: command 0x08,
+         * zero payload. No DP1/DP2/movement/calibration transmissions.
+         * The isolated UART worker continues rejecting Zigbee commands.
+         */
+        if (cycle == 0U) {
+            static const uint8_t status_query[] = {
+                0x55U, 0xAAU, 0x00U, 0x08U, 0x00U, 0x00U, 0x07U
+            };
+            for (size_t i = 0U; i < sizeof(status_query); ++i) {
+                uart_poll_out(uart, status_query[i]);
+                blind_ctx.stress_tx_bytes++;
+            }
         }
         blind_ctx.uart_test_phase = 7U;
         struct tuya_parser parser;
