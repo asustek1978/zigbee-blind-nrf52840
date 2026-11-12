@@ -10,6 +10,7 @@
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/uart.h>
+#include <hal/nrf_uarte.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/atomic.h>
@@ -276,6 +277,16 @@ static void receive_main(void *a, void *b, void *c)
      * Do not attempt GPIO-edge wake yet; it can lose the first byte.
      */
     uart_irq_rx_disable(motor_uart);
+    /* v42.0-13 BENCH ONLY: the IRQ mask in v42.0-12 did not
+     * release the ~1.54 mA UARTE current. Explicitly stop the
+     * hardware receiver and disable the UARTE peripheral.
+     * The Zephyr UART driver is NOT informed of this register change;
+     * no uart_* calls or motor connection are permitted afterward.
+     * This is a one-way diagnostic, NOT a runtime PM solution.
+     */
+    nrf_uarte_task_trigger(NRF_UARTE0, NRF_UARTE_TASK_STOPRX);
+    nrf_uarte_task_trigger(NRF_UARTE0, NRF_UARTE_TASK_STOPTX);
+    nrf_uarte_disable(NRF_UARTE0);
     atomic_set(&uart_ready, 0);
     /* No RX-ready notification: diagnostic TX is disabled. */
     p3_zcl_schedule_sync();
