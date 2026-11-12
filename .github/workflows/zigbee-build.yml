@@ -3,7 +3,7 @@ name: Zigbee nRF52840 Linux build
 on:
   workflow_dispatch:
   push:
-    branches: [main, feature/window-covering-end-device]
+    branches: [main, feature/window-covering-end-device, experiment/v42-0-7-zigbee-sleep]
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -127,6 +127,9 @@ jobs:
           set -euo pipefail
           cfg=build-nicenano/zephyr/.config
           grep '^CONFIG_ZIGBEE_ROLE_END_DEVICE=y' "$cfg"
+          grep -qx '^CONFIG_PM=y' "$cfg"
+          grep -qx '^CONFIG_TICKLESS_KERNEL=y' "$cfg"
+          grep -qx '^CONFIG_LOG=n' "$cfg"
           grep -q 'calibration-button' app/app.overlay
           grep -q 'P3 LOCAL ordinary DP1 STOP queued' app/src/main.c
           grep -q 'P3_BUTTON_PRESS_COUNT 0xF119U' app/src/main.c
@@ -158,7 +161,7 @@ jobs:
           grep -qx '^CONFIG_SETTINGS_NVS=y' "$cfg"
           grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
-          echo "BUILD 41.3 PASS: OPEN/CLOSE/STOP, DP2 percentage setpoint, DP3 feedback and DP13 battery enabled."
+          echo "v42.0-7 CONFIG PASS: OPEN/CLOSE/STOP, DP2 percentage setpoint, DP3 feedback and DP13 battery enabled."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -210,27 +213,27 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v41.3 Stable UF2
+      - name: Package P3-NRF52840 v42.0-7 experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-build41-3.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-7-ZIGBEE-SLEEP.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-build41-3.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-build41-3.uf2
+            sha256sum P3-NRF52840-v42-0-7-ZIGBEE-SLEEP.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-7-ZIGBEE-SLEEP.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-build41-3.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-7-ZIGBEE-SLEEP.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v41.3 — STABLE MOTOR CONTROL
+          P3-NRF52840 v42.0-7 — EXPERIMENTAL ZIGBEE SLEEP
 
           Target: HW-954 nRF52840 nice!nano-compatible board.
           Zigbee: End Device, endpoint 10.
-          Firmware SWBuildID (ZCL Basic 0x4000): 41.3.
+          Firmware SWBuildID (ZCL Basic 0x4000): 42.0-7.
 
           Verified on the user's physical roller blind:
           OPEN, CLOSE, STOP, 0–100% position control, local button,
@@ -245,17 +248,17 @@ jobs:
 
           The external Zigbee2MQTT converter exposes cover and battery only;
           calibration and diagnostics are intentionally hidden in the UI.
-          Battery runtime and sleep current have not been verified.
+          EXPERIMENT: CONFIG_PM and CONFIG_TICKLESS_KERNEL enabled, logging disabled.\n          Sleep current and motor behavior have NOT been validated on this build.\n          Use only on the spare board. Do NOT flash installed blinds.
           This UF2 does not support Zigbee OTA firmware updates.
 
           Verify SHA256SUMS.txt and SOURCE_COMMIT.txt against this build.
           EOF
 
-      - name: Upload P3-NRF52840 v41.3 Stable UF2
+      - name: Upload P3-NRF52840 v42.0-7 experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v41.3-Stable-UF2
+          name: P3-NRF52840-v42-0-7-Zigbee-Sleep-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
