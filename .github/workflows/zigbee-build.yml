@@ -24,6 +24,7 @@ on:
       - experiment/v42-0-23-tuya-framing-pm-bench
       - experiment/v42-0-25-one-shot-status-tx
       - experiment/v42-0-26-status-response-diagnostics
+      - experiment/v42-0-27-rx-edge-wakeup
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -190,6 +191,9 @@ jobs:
           grep -q 'blind_ctx.stress_tx_bytes++' app/src/main.c
           grep -q 'blind_ctx.diag_last_command = decoded.command' app/src/main.c
           grep -q 'blind_ctx.diag_rx_after_tx_ms =' app/src/main.c
+          grep -q 'GPIO_INT_EDGE_FALLING' app/src/main.c
+          grep -q 'k_sem_take(&p3_rx_wake_sem' app/src/main.c
+          grep -q 'P3_RX_WAKE_COUNT 0xF136U' app/src/main.c
           test "$(grep -c 'uart_poll_out(uart,' app/src/main.c)" -eq 1
           if grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg"; then echo '::error::Motor command TX must remain disabled'; exit 1; fi
           grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
