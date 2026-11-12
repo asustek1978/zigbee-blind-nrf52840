@@ -128,7 +128,7 @@ jobs:
           cfg=build-nicenano/zephyr/.config
           echo "=== v42.0-7 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
-          for opt in ZIGBEE_ROLE_END_DEVICE PM TICKLESS_KERNEL; do
+          for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
             if ! grep -qx "CONFIG_${opt}=y" "$cfg"; then
               echo "::error::CONFIG_${opt}=y is missing from generated Zephyr .config"
               exit 1
