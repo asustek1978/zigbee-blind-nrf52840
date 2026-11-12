@@ -172,7 +172,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '2', '5'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '2', '6'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -1011,11 +1011,16 @@ int main(void)
             if (sr != 0) blind_ctx.stress_suspend_err++;
             break;
         }
-        /* v42.0-25: ONE status query only, first RX window after boot.
-         * Classic Tuya 55 AA 00 08 00 00 07: command 0x08,
-         * zero payload. No DP1/DP2/movement/calibration transmissions.
-         * The isolated UART worker continues rejecting Zigbee commands.
+        /* v42.0-26: arm parser before one bounded status query.
+         * No DP writes, STOP, movement or calibration commands.
+         * Diagnostics are read-only Zigbee Basic attributes.
          */
+        blind_ctx.uart_test_phase = 7U;
+        struct tuya_parser parser;
+        struct tuya_frame decoded = {0};
+        tuya_parser_init(&parser);
+        uint32_t window_start = k_uptime_get_32();
+        uint32_t query_sent_at = 0U;
         if (cycle == 0U) {
             static const uint8_t status_query[] = {
                 0x55U, 0xAAU, 0x00U, 0x08U, 0x00U, 0x00U, 0x07U
@@ -1024,12 +1029,8 @@ int main(void)
                 uart_poll_out(uart, status_query[i]);
                 blind_ctx.stress_tx_bytes++;
             }
+            query_sent_at = k_uptime_get_32();
         }
-        blind_ctx.uart_test_phase = 7U;
-        struct tuya_parser parser;
-        struct tuya_frame decoded = {0};
-        tuya_parser_init(&parser);
-        uint32_t window_start = k_uptime_get_32();
         uint8_t received = 0U;
         while ((uint32_t)(k_uptime_get_32() - window_start) < 200U) {
             blind_ctx.uart_rx_attempts++;
@@ -1040,6 +1041,16 @@ int main(void)
                 blind_ctx.uart_rx_rc = 0U;
                 if (tuya_parser_feed(&parser, received, &decoded)) {
                     blind_ctx.tuya_frames_ok++;
+                    blind_ctx.diag_valid_frames++;
+                    blind_ctx.diag_last_command = decoded.command;
+                    blind_ctx.diag_last_format = decoded.format;
+                    /* Only frames received in the query window are timed.
+                     * They may be unsolicited; this is NOT proof of reply.
+                     */
+                    if (query_sent_at != 0U) {
+                        blind_ctx.diag_rx_after_tx_ms =
+                            k_uptime_get_32() - query_sent_at;
+                    }
                 }
             } else {
                 k_sleep(K_MSEC(1));
