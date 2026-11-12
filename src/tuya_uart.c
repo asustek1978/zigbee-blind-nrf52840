@@ -270,9 +270,14 @@ static void receive_main(void *a, void *b, void *c)
         LOG_ERR("Tuya P3 UART RX interrupt failed: %d", err);
         return;
     }
-    uart_irq_rx_enable(motor_uart);
-    atomic_set(&uart_ready, 1);
-    k_sem_give(&p3_uart_rx_started);
+    /* v42.0-12 bench: leave UART device configured but park RX.
+     * This isolates continuous RX activity from device initialization.
+     * No motor may be attached: unsolicited UART reports are discarded.
+     * Do not attempt GPIO-edge wake yet; it can lose the first byte.
+     */
+    uart_irq_rx_disable(motor_uart);
+    atomic_set(&uart_ready, 0);
+    /* No RX-ready notification: diagnostic TX is disabled. */
     p3_zcl_schedule_sync();
     enqueue_captured_startup();
     LOG_INF("Tuya P3 9600 RX active; motor movement TX %s, startup diag %s",
