@@ -9,6 +9,7 @@ on:
       - experiment/v42-0-7-zigbee-sleep
       - experiment/v42-0-8-zigbee-poll-1s
       - experiment/v42-0-9-zigbee-poll-5s
+      - experiment/v42-0-10-button-irq
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -131,7 +132,7 @@ jobs:
         run: |
           set -euo pipefail
           cfg=build-nicenano/zephyr/.config
-          echo "=== v42.0-9 power configuration diagnostics ==="
+          echo "=== v42.0-10 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
           for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
             if ! grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -174,7 +175,7 @@ jobs:
           grep -qx '^CONFIG_SETTINGS_NVS=y' "$cfg"
           grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
-          echo "v42.0-9 CONFIG PASS: OPEN/CLOSE/STOP, DP2 percentage setpoint, DP3 feedback and DP13 battery enabled."
+          echo "v42.0-10 CONFIG PASS: OPEN/CLOSE/STOP, DP2 percentage setpoint, DP3 feedback and DP13 battery enabled."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -226,23 +227,23 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-9 experimental UF2
+      - name: Package P3-NRF52840 v42.0-10 experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-9-ZIGBEE-POLL-5S.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-10-ZIGBEE-BUTTON-IRQ.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-9-ZIGBEE-POLL-5S.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-9-ZIGBEE-POLL-5S.uf2
+            sha256sum P3-NRF52840-v42-0-10-ZIGBEE-BUTTON-IRQ.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-10-ZIGBEE-BUTTON-IRQ.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-9-ZIGBEE-POLL-5S.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-10-ZIGBEE-BUTTON-IRQ.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-9 — EXPERIMENTAL ZIGBEE SLEEP
+          P3-NRF52840 v42.0-10 — EXPERIMENTAL ZIGBEE SLEEP
 
           Target: HW-954 nRF52840 nice!nano-compatible board.
           Zigbee: End Device, endpoint 10.
@@ -267,11 +268,11 @@ jobs:
           Verify SHA256SUMS.txt and SOURCE_COMMIT.txt against this build.
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-9 experimental UF2
+      - name: Upload P3-NRF52840 v42.0-10 experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-9-Zigbee-Poll-5s-UF2
+          name: P3-NRF52840-v42-0-10-Zigbee-Button-IRQ-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
