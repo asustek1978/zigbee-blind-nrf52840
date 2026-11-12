@@ -16,8 +16,13 @@ target_sources(app PRIVATE
   src/tuya_frame.c
   src/tuya_motor.c
   src/tuya_motor_state.c
-  src/tuya_uart.c
 )
+
+if(CONFIG_P3_UART_DIAGNOSTIC_OFF)
+  target_sources(app PRIVATE src/tuya_uart_disabled.c)
+else()
+  target_sources(app PRIVATE src/tuya_uart.c)
+endif()
 
 target_include_directories(app PRIVATE include)
 # NORDIC SDK APP END
