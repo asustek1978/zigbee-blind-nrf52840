@@ -8,6 +8,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/pm/device.h>
+#include <zephyr/drivers/uart.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
@@ -70,6 +71,8 @@
 #define P3_UART_TEST_PHASE 0xF121U
 #define P3_UART_RESUME_RC 0xF122U
 #define P3_UART_SUSPEND2_RC 0xF123U
+#define P3_UART_RX_RC 0xF124U
+#define P3_UART_RX_BYTE 0xF125U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -109,6 +112,8 @@ struct blind_device_context {
     zb_uint32_t uart_deinit_rc;
     zb_uint32_t uart_resume_rc;
     zb_uint32_t uart_suspend2_rc;
+    zb_uint32_t uart_rx_rc;
+    zb_uint8_t uart_rx_byte;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -136,7 +141,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '1', '9'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '2', '0'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -327,6 +332,8 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_UART_DEINIT_RC, &blind_ctx.uart_deinit_rc, ZB_ZCL_ATTR
 ZB_ZCL_SET_ATTR_DESC_M(P3_UART_TEST_PHASE, &blind_ctx.uart_test_phase, ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_UART_RESUME_RC, &blind_ctx.uart_resume_rc, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_UART_SUSPEND2_RC, &blind_ctx.uart_suspend2_rc, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_UART_RX_RC, &blind_ctx.uart_rx_rc, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_UART_RX_BYTE, &blind_ctx.uart_rx_byte, ZB_ZCL_ATTR_TYPE_U8, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -896,6 +903,8 @@ int main(void)
     blind_ctx.uart_deinit_rc = 0x7FFFFFFFU;
     blind_ctx.uart_resume_rc = 0x7FFFFFFFU;
     blind_ctx.uart_suspend2_rc = 0x7FFFFFFFU;
+    blind_ctx.uart_rx_rc = 0x7FFFFFFFU;
+    blind_ctx.uart_rx_byte = 0U;
     blind_ctx.uart_test_phase = 0U;
     p3_cal_button_init();
     ZB_AF_REGISTER_DEVICE_CTX(&blind_device_ctx);
@@ -919,10 +928,11 @@ int main(void)
             BLIND_ENDPOINT, IS_ENABLED(CONFIG_P3_UART_TX_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_POSITION_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_BATTERY_ENABLE));
-    /* v42.0-19: no motor, no UART traffic, no HFCLK manipulation.
-     * 0-30s baseline, 30-33s initialized, 33-48s suspended,
-     * 48-51s resumed, after 51s suspended again.
-     * Read codes from Zigbee Basic private attributes.
+    /* v42.0-20 BENCH ONLY: optional 3.3V TX(P0.20)-RX(P0.17)
+     * jumper on spare HW-954. NEVER connect the P3 motor.
+     * One byte 0xA5 is sent after RESUME, then polled on RX.
+     * A missing jumper produces RX -1; this is expected and harmless.
+     * No periodic UART wakeups or Zigbee motor commands are enabled.
      */
     k_sleep(K_SECONDS(30));
     const struct device *uart = DEVICE_DT_GET(DT_NODELABEL(uart0));
@@ -943,6 +953,11 @@ int main(void)
             blind_ctx.uart_resume_rc = (uint32_t)(int32_t)rc;
             if (rc == 0) {
                 blind_ctx.uart_test_phase = 7U;
+                uint8_t received = 0U;
+                uart_poll_out(uart, 0xA5U);
+                int rx_rc = uart_poll_in(uart, &received);
+                blind_ctx.uart_rx_rc = (uint32_t)(int32_t)rx_rc;
+                blind_ctx.uart_rx_byte = received;
                 k_sleep(K_SECONDS(3));
                 blind_ctx.uart_test_phase = 8U;
                 rc = pm_device_action_run(uart, PM_DEVICE_ACTION_SUSPEND);
