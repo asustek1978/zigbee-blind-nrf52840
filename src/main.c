@@ -125,7 +125,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '1', '6'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '1', '7'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -898,5 +898,19 @@ int main(void)
             BLIND_ENDPOINT, IS_ENABLED(CONFIG_P3_UART_TX_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_POSITION_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_BATTERY_ENABLE));
+    /* v42.0-17: one-shot bench test. Zigbee runs in its own threads.
+     * After 30 s baseline, init deferred UART0 for 3 s, then deinit.
+     * No UART data is transmitted and no motor must be connected.
+     * If deinit is unsupported, DO NOT use this build for power claims.
+     */
+    k_sleep(K_SECONDS(30));
+    const struct device *uart = DEVICE_DT_GET(DT_NODELABEL(uart0));
+    int uart_err = device_init(uart);
+    if (uart_err == 0) {
+        k_sleep(K_SECONDS(3));
+        uart_err = device_deinit(uart);
+    }
+    /* Zigbee Basic SWBuildId identifies the test; no motor commands. */
+    ARG_UNUSED(uart_err);
     return 0;
 }
