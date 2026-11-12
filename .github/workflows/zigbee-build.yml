@@ -177,7 +177,9 @@ jobs:
           grep -q 'P3_UART_RX_WAIT_MS 0xF127U' app/src/main.c
           grep -q 'P3_STRESS_CYCLES 0xF128U' app/src/main.c
           grep -q 'P3_STRESS_ELAPSED_S 0xF132U' app/src/main.c
-          grep -q 'interval_ms = 5000U' app/src/main.c
+          # v42.0-24 uses an inline 5-second schedule, not interval_ms.
+          grep -q 'cycle \* 5000U' app/src/main.c || { echo '::error::RX window interval is not 5000 ms'; exit 1; }
+          grep -q 'window_start) < 200U' app/src/main.c || { echo '::error::RX window duration is not 200 ms'; exit 1; }
           grep -q 'tuya_parser_feed(&parser' app/src/main.c
           grep -q 'P3_TUYA_FRAMES_OK 0xF133U' app/src/main.c
           grep -q 'uart_poll_in(uart, &received)' app/src/main.c
