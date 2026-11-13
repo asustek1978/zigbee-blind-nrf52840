@@ -256,6 +256,12 @@ jobs:
           grep -q 'P3_RX_BAD_STOP_REPORTED_IDLE 0xF145U' app/src/main.c
           grep -q 'P3_RX_BAD_STOP_REPORTED_MOVING 0xF146U' app/src/main.c
           grep -q 'P3_RX_REPORTED_MOTION 0xF14AU' app/src/main.c
+          grep -q 'P3_RX_GPIO_STARTS_REPORTED_IDLE 0xF14BU' app/src/main.c
+          grep -q 'P3_RX_GPIO_STARTS_REPORTED_MOVING 0xF14CU' app/src/main.c
+          grep -q 'P3_RX_GPIO_STARTS_MOTION_UNKNOWN 0xF14DU' app/src/main.c
+          grep -q 'rx_gpio_starts_reported_idle: 0xF14B' app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
+          grep -q 'rx_gpio_starts_reported_moving: 0xF14C' app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
+          grep -q 'rx_gpio_starts_motion_unknown: 0xF14D' app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
           grep -q 'rx_gpio_start_events: 0xF141' app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
           grep -q 'rx_reported_motion: 0xF14A' app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
           grep -q 'p3_soft_uart_set_mcu_motion(reported_motion)' app/src/tuya_uart_hybrid.c
