@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT
- * v42.0-31 EXPERIMENT ONLY: P0.17 GPIO start detection and TIMER3
+ * v42.0-32 EXPERIMENT ONLY: P0.17 GPIO start detection and TIMER3
  * sampling at 9600 8N1, without enabling UARTE0.
  * TIMER3 ownership and IRQ priority MUST be validated against Zigbee R23.
  */
@@ -32,6 +32,21 @@ static uint8_t shift_byte;
 static uint8_t bit_index;
 K_SEM_DEFINE(p3_soft_rx_sem, 0, 1);
 
+/* v42.0-32:
+ * An ordinary 8N1 byte has only half a bit time (~52 us) between
+ * stop-bit centre and the NEXT start edge. Reconfiguring GPIO IRQ at
+ * every byte caused loss of framing at 9600 baud.
+ * Keep GPIO falling-edge IRQ armed; discard edges while the timer
+ * actively decodes. On continuous bytes, sample the NEXT start bit
+ * in the timer at bit 10.5, avoiding the GPIO re-arm gap entirely.
+ */
+enum p3_rx_phase {
+    P3_RX_DATA,
+    P3_RX_STOP,
+    P3_RX_NEXT_START,
+};
+static volatile enum p3_rx_phase rx_phase;
+
 static void timer3_irq(const void *unused)
 {
     ARG_UNUSED(unused);
@@ -39,28 +54,54 @@ static void timer3_irq(const void *unused)
         return;
     }
     nrf_timer_event_clear(NRF_TIMER3, NRF_TIMER_EVENT_COMPARE0);
-    /* TIMER3 is reset by SHORT COMPARE0->CLEAR on each compare. */
-    bool level = nrf_gpio_pin_read(P3_RX_PIN) != 0;
-    if (bit_index < 8U) {
-        if (level) shift_byte |= (uint8_t)(1U << bit_index);
+    const bool level = nrf_gpio_pin_read(P3_RX_PIN) != 0;
+
+    if (rx_phase == P3_RX_DATA) {
+        if (level) {
+            shift_byte |= (uint8_t)(1U << bit_index);
+        }
         bit_index++;
+        if (bit_index == 8U) {
+            rx_phase = P3_RX_STOP;
+        }
         nrf_timer_cc_set(NRF_TIMER3, NRF_TIMER_CC_CHANNEL0, P3_BIT_US);
         return;
     }
+
+    if (rx_phase == P3_RX_STOP) {
+        if (level) {
+            if (ring_buf_put(&p3_soft_ring, &shift_byte, 1U) != 1U) {
+                atomic_inc(&overflow_errors);
+            } else {
+                k_sem_give(&p3_soft_rx_sem);
+            }
+        } else {
+            atomic_inc(&framing_errors);
+        }
+        /* At stop centre (bit 9.5). Check next start at bit 10.5. */
+        rx_phase = P3_RX_NEXT_START;
+        nrf_timer_cc_set(NRF_TIMER3, NRF_TIMER_CC_CHANNEL0, P3_BIT_US);
+        return;
+    }
+
+    if (!level) {
+        /* Back-to-back byte: now at the midpoint of its start bit.
+         * First data bit is one bit period later (bit 11.5).
+         */
+        shift_byte = 0U;
+        bit_index = 0U;
+        rx_phase = P3_RX_DATA;
+        atomic_inc(&start_count);
+        nrf_timer_cc_set(NRF_TIMER3, NRF_TIMER_CC_CHANNEL0, P3_BIT_US);
+        return;
+    }
+
+    /* Idle between bytes: stop sampling. GPIO IRQ has stayed armed,
+     * and will start a new timer window on the next falling edge.
+     */
     nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_STOP);
     nrf_timer_int_disable(NRF_TIMER3, NRF_TIMER_INT_COMPARE0_MASK);
-    if (level) {
-        if (ring_buf_put(&p3_soft_ring, &shift_byte, 1U) != 1U) {
-            atomic_inc(&overflow_errors);
-        } else {
-            k_sem_give(&p3_soft_rx_sem);
-        }
-    } else {
-        atomic_inc(&framing_errors);
-    }
-    /* Re-arm only after stop-bit sample: ~52 us remain before next start. */
     atomic_clear(&active);
-    gpio_pin_interrupt_configure(gpio, P3_RX_PIN, GPIO_INT_EDGE_FALLING);
 }
 
 static void rx_start_irq(const struct device *port,
@@ -69,10 +110,12 @@ static void rx_start_irq(const struct device *port,
     ARG_UNUSED(port);
     ARG_UNUSED(cb);
     ARG_UNUSED(pins);
-    if (!atomic_cas(&active, 0, 1)) return;
-    gpio_pin_interrupt_configure(gpio, P3_RX_PIN, GPIO_INT_DISABLE);
+    if (!atomic_cas(&active, 0, 1)) {
+        return;
+    }
     shift_byte = 0U;
     bit_index = 0U;
+    rx_phase = P3_RX_DATA;
     atomic_inc(&start_count);
     nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_CLEAR);
     nrf_timer_cc_set(NRF_TIMER3, NRF_TIMER_CC_CHANNEL0, P3_FIRST_SAMPLE_US);
