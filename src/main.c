@@ -187,7 +187,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '3', '5'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '3', '6'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -1000,9 +1000,9 @@ int main(void)
             BLIND_ENDPOINT, IS_ENABLED(CONFIG_P3_UART_TX_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_POSITION_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_BATTERY_ENABLE));
-    /* v42.0-35: continuous passive hybrid TIMER3 + UARTE + EasyDMA RX.
-     * No motor TX, query, STOP, or DP writes. The parser persists.
-     * Each UARTE RX burst still ends after ~15 ms idle; only the
+    /* v42.0-36: continuous RX on UARTE0 + independent user-only TX on UARTE1.
+     * Motor TX only on explicit Zigbee requests. No unsolicited UART writes.
+     * UARTE0 RX still powers down after ~15 ms idle; only the
      * overall 20-minute diagnostic limit has been removed.
      * Experimental, not a production actuator.
      */
@@ -1011,6 +1011,7 @@ int main(void)
     int rc = p3_soft_uart_start();
     blind_ctx.uart_init_rc = (uint32_t)(int32_t)rc;
     if (rc != 0) { blind_ctx.uart_test_phase = 5U; return 0; }
+    tuya_uart_set_rx_ready(true);
     blind_ctx.uart_test_phase = 7U;
     struct tuya_parser parser;
     struct tuya_frame decoded = {0};
@@ -1020,7 +1021,7 @@ int main(void)
     uint32_t sample_count = 0U;
     uint32_t previous_rejected = 0U;
     uint32_t last_progress = started;
-    /* v42.0-35: continuous passive monitoring. Never stop after
+    /* v42.0-36: continuous RX plus independent UARTE1 Zigbee TX. Never stop after
      * 1200 s; UARTE itself is still disabled after every idle burst.
      * Keep the same proven timer->UARTE handoff as v42.0-34.
      */
@@ -1030,6 +1031,7 @@ int main(void)
         rc = p3_soft_uart_read(&received, K_MSEC(100));
         if (rc == 1) {
             blind_ctx.stress_rx_bytes++;
+            tuya_uart_note_rx_byte();
             blind_ctx.uart_rx_byte = received;
             blind_ctx.uart_rx_rc = 0U;
             if (sample_count < 4U) {
@@ -1047,10 +1049,12 @@ int main(void)
                 blind_ctx.diag_valid_frames++;
                 blind_ctx.diag_last_command = decoded.command;
                 blind_ctx.diag_last_format = decoded.format;
+                tuya_uart_accept_report(&decoded);
             }
             if (parser.rejected != previous_rejected) {
                 blind_ctx.tuya_frames_rejected += parser.rejected - previous_rejected;
                 previous_rejected = parser.rejected;
+                tuya_uart_set_rejected_count(parser.rejected);
             }
         } else if (rc == 0) {
             /* No buffered data: sleep until GPIO/TIMER receives a byte. */
