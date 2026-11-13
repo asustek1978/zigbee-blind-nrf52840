@@ -78,6 +78,9 @@ def inspect(dts: str, conf: str) -> dict:
         reasons.append("application not built for MCUboot-signed images")
     if "CONFIG_ZIGBEE_FOTA=y" not in conf:
         reasons.append("no Zigbee OTA Upgrade client installed")
+    # The checked-in DTS is NOT a readback of the actual device.
+    # Never infer bootloader compatibility solely from build inputs.
+    reasons.append("physical HW-954 bootloader and recovery path have not been verified")
     if partitions["uf2_app_guard"] is not None:
         reasons.append("existing 0xAD000..0xED000 guard is protected; never use it as staging")
 
