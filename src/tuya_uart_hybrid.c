@@ -12,6 +12,7 @@
 #include "tuya_frame.h"
 #include "tuya_motor.h"
 #include "tuya_motor_state.h"
+#include "p3_soft_uart.h" /* passive RX motion-state classification only */
 
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -80,12 +81,22 @@ void tuya_uart_accept_report(const struct tuya_frame *frame)
 {
     struct tuya_motor_changes changes = {0};
     bool accepted;
+    uint8_t reported_motion = 0xffU;
     if (frame == NULL) {
         return;
     }
     k_mutex_lock(&p3_state_mutex, K_FOREVER);
     accepted = tuya_motor_apply_report(frame, &motor_state, &changes);
+    if (accepted && motor_state.motion_valid) {
+        reported_motion = motor_state.motion; /* actual last MCU DP1 */
+    }
     k_mutex_unlock(&p3_state_mutex);
+    /* Classification only: does not issue motor commands, enable RX
+     * hardware or modify timer/UARTE scheduling.
+     */
+    if (reported_motion <= 2U) {
+        p3_soft_uart_set_mcu_motion(reported_motion);
+    }
 
     k_mutex_lock(&p3_diag_mutex, K_FOREVER);
     p3_diag.valid_frames++;
