@@ -1,4 +1,4 @@
-/* Experimental v42.0-32 passive software UART diagnostics.
+/* Experimental v42.0-33 GPIOTE/PPI hardware-start software UART diagnostics.
  * Never sends UART motor commands. Diagnostic reads use Zigbee Basic cluster.
  */
 import * as fz from 'zigbee-herdsman-converters/converters/fromZigbee';
@@ -17,6 +17,8 @@ const diagnosticAttributes = {
     tuya_frames_ok: 0xF133,
     tuya_frames_rejected: 0xF134,
     stress_rx_bytes: 0xF12C,
+    rx_max_isr_lag_us: 0xF12D,
+    rx_late_isr_count: 0xF12A,
     stress_elapsed_s: 0xF132,
     uart_test_phase: 0xF121,
     diag_last_command: 0xF105,
@@ -43,14 +45,14 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v42.0-32 continuous software UART RX diagnostic',
+    description: 'P3 nRF52840 v42.0-33 PPI hardware-start software UART RX diagnostics',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee],
     exposes: [
         e.cover_position(), e.battery(),
         ...Object.keys(diagnosticAttributes).map((name) =>
             e.numeric(name, ea.STATE_GET).withDescription(
-                'Read-only diagnostic from Zigbee Basic cluster; first4/next4 are little-endian packed bytes'
+                'Read-only Zigbee Basic diagnostic: first4/next4 little-endian, ISR late threshold 35us'
             )),
     ],
     endpoint: () => ({default: 10}),
