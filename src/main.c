@@ -103,6 +103,14 @@
 #define P3_RX_FIRST4 0xF139U
 #define P3_RX_NEXT4 0xF13AU
 #define P3_RX_LAST_ERROR 0xF13BU
+/* v42.0-39: dedicated, read-only RX failure breakdown.
+ * Previously rx_error_count combined these independent sources.
+ */
+#define P3_RX_FRAMING_ERRORS 0xF13CU
+#define P3_RX_RING_OVERFLOWS 0xF13DU
+#define P3_RX_SOFTWARE_STARTS 0xF13EU
+#define P3_RX_SOFTWARE_NONHEADER 0xF13FU
+#define P3_UART_LAST_ERRORSRC 0xF140U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -166,6 +174,11 @@ struct blind_device_context {
     zb_uint32_t rx_first4;
     zb_uint32_t rx_next4;
     zb_uint32_t rx_last_error;
+    zb_uint32_t rx_framing_errors;
+    zb_uint32_t rx_ring_overflows;
+    zb_uint32_t rx_software_starts;
+    zb_uint32_t rx_software_nonheader;
+    zb_uint32_t uart_last_errorsrc;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -193,7 +206,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '3', '7'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '3', '9'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -410,6 +423,11 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_RX_ERROR_COUNT, &blind_ctx.rx_error_count, ZB_ZCL_ATTR
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_FIRST4, &blind_ctx.rx_first4, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_NEXT4, &blind_ctx.rx_next4, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_LAST_ERROR, &blind_ctx.rx_last_error, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_FRAMING_ERRORS, &blind_ctx.rx_framing_errors, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_RING_OVERFLOWS, &blind_ctx.rx_ring_overflows, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_SOFTWARE_STARTS, &blind_ctx.rx_software_starts, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_SOFTWARE_NONHEADER, &blind_ctx.rx_software_nonheader, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_UART_LAST_ERRORSRC, &blind_ctx.uart_last_errorsrc, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -1078,8 +1096,16 @@ int main(void)
             /* v42.0-32: report software UART errors during the test,
              * not only at the end of the 20-minute window.
              */
-            blind_ctx.rx_error_count = p3_soft_uart_framing_errors() +
-                                       p3_soft_uart_overflows() +
+            /* Same aggregate as v42.0-37, plus individual sources. No
+             * locks, UART wakeups, or timing changes in the hot RX loop.
+             */
+            blind_ctx.rx_framing_errors = p3_soft_uart_framing_errors();
+            blind_ctx.rx_ring_overflows = p3_soft_uart_overflows();
+            blind_ctx.rx_software_starts = p3_soft_uart_starts();
+            blind_ctx.rx_software_nonheader = p3_soft_uart_software_nonheader_bytes();
+            blind_ctx.uart_last_errorsrc = p3_soft_uart_last_hw_errorsrc();
+            blind_ctx.rx_error_count = blind_ctx.rx_framing_errors +
+                                       blind_ctx.rx_ring_overflows +
                                        p3_soft_uart_hardware_errors() +
                                        p3_soft_uart_handoff_errors();
             blind_ctx.rx_edge_count = p3_soft_uart_uarte_wakes();
