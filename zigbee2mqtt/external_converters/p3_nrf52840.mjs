@@ -11,6 +11,13 @@ const e = exposes.presets;
 const ea = exposes.access;
 const diagnosticAttributes = {
     tx_frames: 0xF113,
+    uart_tx_duration_ms: 0xF115,
+    zigbee_motor_commands: 0xF117,
+    uart_rx_ready: 0xF10A,
+    motor_report_count: 0xF104,
+    motor_dp_position: 0xF108,
+    motor_dp_battery: 0xF109,
+    tx_failed_bytes: 0xF103,
     uart_queue_to_tx_ms: 0xF114,
     uart_rx_after_tx_ms: 0xF116,
     rx_header_count: 0xF137,
