@@ -7,8 +7,10 @@
  * After a verified 0x55 stop bit, UARTE0 / EasyDMA take over
  * from the NEXT start bit (normally 0xAA), then stop after idle.
  *
- * This handover has a ~52 us timing budget and is NOT proven.
- * Motor TX is physically disconnected and never driven.
+ * The ~52 us UART handover was demonstrated on the user's HW-954
+ * (v42.0-34/35); actual loss rate under motor activity is unproven.
+ * Motor TX P0.20 is now physically connected and uses an INDEPENDENT
+ * UARTE1 peripheral; this file owns only TIMER3 and UARTE0 RX.
  * Do not use as a production actuator until validated.
  */
 #include <zephyr/kernel.h>
