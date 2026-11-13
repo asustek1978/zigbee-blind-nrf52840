@@ -26,6 +26,7 @@ on:
       - experiment/v42-0-26-status-response-diagnostics
       - experiment/v42-0-27-rx-edge-wakeup
       - experiment/v42-0-28-continuous-uart-rx
+      - experiment/v42-0-29-rx-diagnostics
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
