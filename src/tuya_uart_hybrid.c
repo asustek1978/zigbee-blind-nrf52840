@@ -56,6 +56,7 @@ static struct tuya_uart_diagnostics p3_diag = {
 };
 static uint8_t tx_dma[P3_TX_FRAME_CAP] __aligned(4);
 static atomic_t rx_ready;
+static atomic_t rx_bytes_total;
 static atomic_t pending_zigbee_timestamp;
 static atomic_t response_pending;
 static atomic_t last_tx_ms;
@@ -71,9 +72,8 @@ void tuya_uart_set_rx_ready(bool ready)
 
 void tuya_uart_note_rx_byte(void)
 {
-    k_mutex_lock(&p3_diag_mutex, K_FOREVER);
-    p3_diag.rx_bytes++;
-    k_mutex_unlock(&p3_diag_mutex);
+    /* Keep RX hot path lock-free, especially during Zigbee activity. */
+    atomic_inc(&rx_bytes_total);
 }
 
 void tuya_uart_accept_report(const struct tuya_frame *frame)
@@ -129,6 +129,7 @@ void tuya_uart_get_diagnostics(struct tuya_uart_diagnostics *out)
     k_mutex_lock(&p3_diag_mutex, K_FOREVER);
     *out = p3_diag;
     k_mutex_unlock(&p3_diag_mutex);
+    out->rx_bytes = (uint32_t)atomic_get(&rx_bytes_total);
     out->rx_ready = (uint8_t)atomic_get(&rx_ready);
 }
 
