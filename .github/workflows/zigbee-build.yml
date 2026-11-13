@@ -300,16 +300,17 @@ jobs:
           )
           python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-31-SOFT-UART-UNVERIFIED.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-25 RX-ONLY P3 UART observation
-          SPARE HW-954 ONLY. Remove loopback jumper before power-on.
-          Connect P3 TXD -> nRF P0.17 RX, common GND ONLY after checking
-          voltage levels. NEVER connect nRF TX P0.20 to motor.
-          240 receive windows, 200ms each every 5s; 30s startup delay.
-          Motor commands are disabled. No bytes transmitted by firmware.
-          0xF128 windows; 0xF12C received bytes; 0xF133 valid Tuya frames;
-          0xF134 parser rejects; 0xF12E incomplete windows.
-          Unsolicited data outside RX windows is intentionally lost.
-          Expect 240 completed windows and 0 PM errors; RX bytes may be 0.
+          P3-NRF52840 v42.0-31 GPIO/TIMER SOFTWARE UART EXPERIMENT
+          UNVERIFIED / NOT FLASH-READY. Experimental code, compilation,
+          timing, IRQ ownership, power draw and long-term frame capture
+          have not yet been validated on a real HW-954 board.
+          No motor commands are sent; UART TX to motor remains disconnected.
+          Passive RX on P0.17 using GPIO + TIMER3 at 9600 baud, 8N1.
+          30-second startup delay followed by 20-minute diagnostic capture.
+          The receiver is an experimental software implementation.
+          Do not install on the only functioning curtain controller.
+          Compare valid frames, rejects, framing errors and current against
+          the known baseline v42.0-29 (1.39-1.41mA for RX enabled).
           EOF
 
       - name: Upload P3-NRF52840 v42.0-31 UNVERIFIED experimental UF2
