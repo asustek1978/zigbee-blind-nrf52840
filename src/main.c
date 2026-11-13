@@ -2,8 +2,9 @@
  * SPDX-License-Identifier: MIT
  *
  * P3 Zigbee Window Covering prototype — sleepy End Device.
- * UART motor TX and ZCL interpretation of DP3/DP13 are compile-time
- * DISABLED by default. Bootloader/SoftDevice map not yet verified.
+ * Experimental v42.0-36: independent UARTE1 motor TX is enabled for
+ * explicit Zigbee commands, while UARTE0/TIMER3 low-power RX remains.
+ * Bootloader/SoftDevice map is not verified for other hardware.
  */
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
@@ -906,7 +907,7 @@ static void covering_device_callback(zb_bufid_t bufid)
      */
     param->status = queued ? RET_OK : RET_ERROR;
     if (!queued) {
-        LOG_WRN("Window Covering action rejected (motor TX disabled/not ready)");
+        LOG_WRN("Window Covering action rejected (RX not ready or TX queue full)");
     }
 }
 
