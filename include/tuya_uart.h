@@ -9,7 +9,7 @@
 #include <stdint.h>
 #include "tuya_frame.h"
 
-/* Receive state is always available; motor TX is OFF by default (Kconfig).
+/* RX state is available; v42.0-36 enables user-only Zigbee TX via UARTE1.
  * True means accepted into a bounded UART queue, NOT physical completion.
  * Never auto-issue movement on boot or Zigbee network join.
  */
