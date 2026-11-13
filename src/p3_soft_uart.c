@@ -4,6 +4,7 @@
  * TIMER3 ownership and IRQ priority MUST be validated against Zigbee R23.
  */
 #include <zephyr/kernel.h>
+#include <errno.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/irq.h>
@@ -94,7 +95,8 @@ int p3_soft_uart_start(void)
     nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_STOP);
     nrf_timer_mode_set(NRF_TIMER3, NRF_TIMER_MODE_TIMER);
     nrf_timer_bit_width_set(NRF_TIMER3, NRF_TIMER_BIT_WIDTH_32);
-    nrf_timer_frequency_set(NRF_TIMER3, NRF_TIMER_FREQ_1MHz);
+    /* 16 MHz / 2^4 = 1 MHz timer clock (104 us per UART bit). */
+    nrf_timer_prescaler_set(NRF_TIMER3, 4U);
     nrf_timer_shorts_enable(NRF_TIMER3, NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK);
     IRQ_CONNECT(TIMER3_IRQn, 3, timer3_irq, NULL, 0);
     irq_enable(TIMER3_IRQn);
