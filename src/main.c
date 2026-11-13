@@ -13,6 +13,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/atomic.h>
+#include <zephyr/sys/ring_buffer.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/settings/settings.h>
 #include <string.h>
@@ -186,7 +187,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '2', '9'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '3', '0'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -940,6 +941,33 @@ void zboss_signal_handler(zb_bufid_t bufid)
     }
 }
 
+/* v42.0-30: interrupt-driven UART RX with bounded single-producer ring.
+ * IRQ writes; application thread reads. No motor UART TX.
+ */
+RING_BUF_DECLARE(p3_rx_ring, 2048);
+K_SEM_DEFINE(p3_rx_signal, 0, 1);
+static atomic_t p3_rx_overflow;
+
+static void p3_uart_rx_irq(const struct device *dev, void *user_data)
+{
+    ARG_UNUSED(user_data);
+    if (!uart_irq_update(dev)) {
+        return;
+    }
+    while (uart_irq_rx_ready(dev)) {
+        uint8_t bytes[32];
+        int count = uart_fifo_read(dev, bytes, sizeof(bytes));
+        if (count <= 0) {
+            break;
+        }
+        uint32_t stored = ring_buf_put(&p3_rx_ring, bytes, (uint32_t)count);
+        if (stored != (uint32_t)count) {
+            atomic_add(&p3_rx_overflow, count - (int)stored);
+        }
+        k_sem_give(&p3_rx_signal);
+    }
+}
+
 int main(void)
 {
     LOG_INF("Starting P3 Zigbee Window Covering sleepy End Device");
@@ -999,10 +1027,9 @@ int main(void)
             BLIND_ENDPOINT, IS_ENABLED(CONFIG_P3_UART_TX_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_POSITION_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_BATTERY_ENABLE));
-    /* v42.0-29: continuous RX with exposed Zigbee diagnostics, 20 minutes after 30s startup.
-     * No UART suspend/resume and no motor TX, query, STOP, or DP writes.
-     * Parser persists across the entire receive period.
-     * This is a temporary high-current experiment, not production firmware.
+    /* v42.0-30: passive IRQ-driven RX, 20 minutes after 30s startup.
+     * Interrupt handler fills a 2048-byte ring; parser runs in main thread.
+     * No motor TX, STOP, calibration or startup queries.
      */
     k_sleep(K_SECONDS(30));
     const struct device *uart = DEVICE_DT_GET(DT_NODELABEL(uart0));
@@ -1010,23 +1037,26 @@ int main(void)
     int rc = device_init(uart);
     blind_ctx.uart_init_rc = (uint32_t)(int32_t)rc;
     if (rc != 0) { blind_ctx.uart_test_phase = 5U; return 0; }
-    blind_ctx.uart_test_phase = 7U;
+    rc = uart_irq_callback_user_data_set(uart, p3_uart_rx_irq, NULL);
+    blind_ctx.uart_rx_rc = (uint32_t)(int32_t)rc;
+    if (rc != 0) { blind_ctx.uart_test_phase = 5U; return 0; }
     struct tuya_parser parser;
     struct tuya_frame decoded = {0};
     tuya_parser_init(&parser);
-    const uint32_t started = k_uptime_get_32();
     uint8_t previous = 0U;
     uint32_t sample_count = 0U;
     uint32_t previous_rejected = 0U;
+    const uint32_t started = k_uptime_get_32();
     uint32_t last_progress = started;
+    uart_irq_rx_enable(uart);
+    blind_ctx.uart_test_phase = 7U;
     while ((uint32_t)(k_uptime_get_32() - started) < 1200000U) {
-        uint8_t received = 0U;
-        blind_ctx.uart_rx_attempts++;
-        rc = uart_poll_in(uart, &received);
-        if (rc == 0) {
+        uint8_t received;
+        uint32_t drained = 0U;
+        while (ring_buf_get(&p3_rx_ring, &received, 1U) == 1U) {
+            drained++;
             blind_ctx.stress_rx_bytes++;
             blind_ctx.uart_rx_byte = received;
-            blind_ctx.uart_rx_rc = 0U;
             if (sample_count < 4U) {
                 blind_ctx.rx_first4 |= (uint32_t)received << (sample_count * 8U);
             } else if (sample_count < 8U) {
@@ -1047,15 +1077,8 @@ int main(void)
                 blind_ctx.tuya_frames_rejected += parser.rejected - previous_rejected;
                 previous_rejected = parser.rejected;
             }
-        } else if (rc == -1) {
-            /* Zephyr uart_poll_in: -1 means no data, not a UART error. */
-            k_sleep(K_MSEC(1));
-        } else {
-            blind_ctx.rx_error_count++;
-            blind_ctx.rx_last_error = (uint32_t)(int32_t)rc;
-            blind_ctx.uart_rx_rc = (uint32_t)(int32_t)rc;
-            k_sleep(K_MSEC(1));
         }
+        blind_ctx.uart_rx_attempts++;
         uint32_t now = k_uptime_get_32();
         if ((uint32_t)(now - last_progress) >= 5000U) {
             blind_ctx.stress_cycles++;
@@ -1063,9 +1086,21 @@ int main(void)
             blind_ctx.stress_elapsed_s = (now - started) / 1000U;
             last_progress = now;
         }
+        if (drained == 0U) {
+            /* IRQ wakes us on data. Bounded wait also updates diagnostics. */
+            (void)k_sem_take(&p3_rx_signal, K_MSEC(100));
+        }
     }
+    uart_irq_rx_disable(uart);
+    /* Drain bytes already received before IRQ was disabled. */
+    uint32_t overflow = (uint32_t)atomic_get(&p3_rx_overflow);
+    blind_ctx.stress_failed = overflow;
+    blind_ctx.rx_error_count = overflow;
+    blind_ctx.rx_last_error = overflow ? 1U : 0U;
     blind_ctx.stress_elapsed_s = (k_uptime_get_32() - started) / 1000U;
-    if (parser.used != 0U) blind_ctx.stress_rx_timeout++;
+    if (parser.used != 0U || !ring_buf_is_empty(&p3_rx_ring)) {
+        blind_ctx.stress_rx_timeout++;
+    }
     blind_ctx.uart_test_phase = 9U;
     return 0;
 }
