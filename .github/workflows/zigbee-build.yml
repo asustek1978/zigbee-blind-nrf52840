@@ -30,6 +30,7 @@ on:
       - experiment/v42-0-31-gpiote-timer-soft-uart
       - experiment/v42-0-32-continuous-soft-uart
       - experiment/v42-0-34-hybrid-wakeup
+      - experiment/v42-0-35-continuous-hybrid-rx
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -147,7 +148,7 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Verify v42.0-34 GPIO/TIMER RX safety
+      - name: Verify v42.0-35 GPIO/TIMER RX safety
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
@@ -182,8 +183,14 @@ jobs:
           grep -q 'P3_UART_RX_WAIT_MS 0xF127U' app/src/main.c
           grep -q 'P3_STRESS_CYCLES 0xF128U' app/src/main.c
           grep -q 'P3_STRESS_ELAPSED_S 0xF132U' app/src/main.c
-          # v42.0-28: passive continuous RX, no GPIO wake or motor UART TX.
-          grep -q 'while ((uint32_t)(k_uptime_get_32() - started) < 1200000U)' app/src/main.c
+          # v42.0-35: never stop passive RX at 1200 s, but UARTE still sleeps between bursts.
+          grep -q 'while (true)' app/src/main.c
+          if grep -q '1200000U' app/src/main.c; then
+            echo '::error::Obsolete 1200-second receiver timeout remains'
+            exit 1
+          fi
+          grep -q 'P3_UART_IDLE_MS 15U' app/src/p3_soft_uart.c
+          grep -q 'p3_uart_disable();' app/src/p3_soft_uart.c
           grep -q 'tuya_parser_feed(&parser' app/src/main.c
           grep -q 'p3_soft_uart_read(&received' app/src/main.c
           grep -q 'src/p3_soft_uart.c' app/CMakeLists.txt
@@ -207,7 +214,7 @@ jobs:
           if grep -q 'uart_poll_out(uart,' app/src/main.c; then echo '::error::Passive RX test must not transmit'; exit 1; fi
           if grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg"; then echo '::error::Motor command TX must remain disabled'; exit 1; fi
           grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
-          echo "=== v42.0-34 power configuration diagnostics ==="
+          echo "=== v42.0-35 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
           for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
             if ! grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -251,7 +258,7 @@ jobs:
           if grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"; then echo '::error::Calibration must be off'; exit 1; fi
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
           grep -q 'status = "okay";' app/boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts
-          echo "v42.0-34 CONFIG PASS: passive software UART RX configured; motor TX disabled."
+          echo "v42.0-35 CONFIG PASS: passive hybrid UARTE RX configured; motor TX disabled."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -295,30 +302,30 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-34 UNVERIFIED experimental UF2
+      - name: Package P3-NRF52840 v42.0-35 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-34-HYBRID-UARTE-UNVERIFIED.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-35-CONTINUOUS-HYBRID-UNVERIFIED.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-34-HYBRID-UARTE-UNVERIFIED.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-34-HYBRID-UARTE-UNVERIFIED.uf2
+            sha256sum P3-NRF52840-v42-0-35-CONTINUOUS-HYBRID-UNVERIFIED.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-35-CONTINUOUS-HYBRID-UNVERIFIED.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-34-HYBRID-UARTE-UNVERIFIED.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-35-CONTINUOUS-HYBRID-UNVERIFIED.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-34 HYBRID TIMER3 + UARTE EASYDMA EXPERIMENT
+          P3-NRF52840 v42.0-35 HYBRID TIMER3 + UARTE EASYDMA EXPERIMENT
           UNVERIFIED / NOT FLASH-READY. Experimental code, compilation,
           timing, IRQ ownership, power draw and long-term frame capture
           have not yet been validated on a real HW-954 board.
           No motor commands are sent; UART TX to motor remains disconnected.
           Hybrid passive RX: TIMER3 captures first 0x55 while enabling UARTE;
           UARTE EasyDMA captures subsequent bytes; idle STOPRX powers down RX.
-          30-second startup delay followed by 20-minute diagnostic capture.
+          30-second startup delay then continuous passive RX (no 20-minute cut-off).
           The byte-boundary handoff is UNPROVEN at 9600 baud (about 52us margin).
           This is a bench experiment, not an actuator-ready firmware.
           Do not install on the only functioning curtain controller.
@@ -326,11 +333,11 @@ jobs:
           the known baseline v42.0-29 (1.39-1.41mA for RX enabled).
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-34 UNVERIFIED experimental UF2
+      - name: Upload P3-NRF52840 v42.0-35 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-34-HYBRID-UARTE-UNVERIFIED-UF2
+          name: P3-NRF52840-v42-0-35-CONTINUOUS-HYBRID-UNVERIFIED-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
