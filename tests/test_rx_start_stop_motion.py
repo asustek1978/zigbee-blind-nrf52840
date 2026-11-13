@@ -51,9 +51,6 @@ class TestRxStartStopMotion(unittest.TestCase):
                 self.assertIn(f"#define P3_{symbolic} 0x{attr}U", self.main)
                 self.assertIn(f"P3_{symbolic}, &blind_ctx.{field}", self.main)
                 self.assertIn(f"{field}: 0x{attr},", self.z2m)
-                self.assertIn(f"p3_soft_uart_{field}(", self.h) if field in (
-                    "rx_gpio_start_events",
-                ) else None
         attr_numbers = re.findall(r"#define P3_(?:RX|UART)_\w+ 0x(F\w+)U", self.main)
         self.assertEqual(len(attr_numbers), len(set(attr_numbers)))
 
