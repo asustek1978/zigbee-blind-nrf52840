@@ -45,6 +45,9 @@ class TestRxStartStopMotion(unittest.TestCase):
             "RX_LAST_BAD_STOP_MS": ("rx_last_bad_stop_ms", "F148"),
             "RX_LAST_BAD_STOP_BYTE": ("rx_last_bad_stop_byte", "F149"),
             "RX_REPORTED_MOTION": ("rx_reported_motion", "F14A"),
+            "RX_GPIO_STARTS_REPORTED_IDLE": ("rx_gpio_starts_reported_idle", "F14B"),
+            "RX_GPIO_STARTS_REPORTED_MOVING": ("rx_gpio_starts_reported_moving", "F14C"),
+            "RX_GPIO_STARTS_MOTION_UNKNOWN": ("rx_gpio_starts_motion_unknown", "F14D"),
         }
         for symbolic, (field, attr) in attrs.items():
             with self.subTest(field=field):
@@ -72,6 +75,12 @@ class TestRxStartStopMotion(unittest.TestCase):
         self.assertIn("atomic_inc(&rx_bad_stop_motion_unknown);", self.rx)
         self.assertIn("rx_origin_gpio = true; /* tag byte whose start was a GPIO edge */", self.rx)
         self.assertIn("rx_origin_gpio = false; /* follow-on byte, not GPIO wake */", self.rx)
+        for bucket in (
+            "rx_gpio_starts_reported_idle",
+            "rx_gpio_starts_reported_moving",
+            "rx_gpio_starts_motion_unknown",
+        ):
+            self.assertIn(f"atomic_inc(&{bucket});", self.rx)
 
     def test_arm_timer_before_diagnostic_start_timestamp(self):
         gpio_code = self.rx.split("static void rx_start_irq(", 1)[1].split(
