@@ -30,11 +30,15 @@ We keep unmodified:
 | `rx_last_bad_stop_ms` | `0xF148` | Uptime in ms when latest software STOP check failed |
 | `rx_last_bad_stop_byte` | `0xF149` | Eight sampled data bits from latest failed software STOP attempt; **not valid UART byte** |
 | `rx_reported_motion` | `0xF14A` | Last validated MCU DP1 (0 OPEN, 1 STOP, 2 CLOSE, 3 unknown) |
+| `rx_gpio_starts_reported_idle` | `0xF14B` | GPIO start edges with DP1=STOP |
+| `rx_gpio_starts_reported_moving` | `0xF14C` | GPIO start edges with DP1=OPEN/CLOSE |
+| `rx_gpio_starts_motion_unknown` | `0xF14D` | GPIO start edges when no DP1 is known |
 
 **Required cumulative invariants**, once attributes are read from the same approximate time window:
 - `rx_bad_stop_gpio + rx_bad_stop_chained = rx_framing_errors`.
 - `rx_bad_stop_reported_idle + rx_bad_stop_reported_moving + rx_bad_stop_motion_unknown = rx_framing_errors`.
 - `rx_error_count = rx_framing_errors + rx_ring_overflows + uart_hardware_errors + uart_handoff_errors`.
+- `rx_gpio_start_events = rx_gpio_starts_reported_idle + rx_gpio_starts_reported_moving + rx_gpio_starts_motion_unknown`.
 
 All count values are volatile (reset with the board). Multiple Zigbee ZCL read transactions are **not an atomic snapshot**, so transient differences are expected; wait ~5 seconds for published diagnostic refresh and re-read. No performance metric should be inferred from `rx_last_gpio_start_ms - rx_last_bad_stop_ms` as UART timing is much faster than the coarse ms clock.
 
@@ -45,7 +49,7 @@ All count values are volatile (reset with the board). Multiple Zigbee ZCL read t
 2. Upgrade external Zigbee2MQTT converter with the `p3_nrf52840.mjs` from this branch and restart Zigbee2MQTT (does **not** reboot MCU or reset its counters).
 3. Flash the v42.0-40 **experimental** UF2 onto the bench device; do **not** assume the modified build maintains current consumption.
 4. Reboot nRF52840. Read `uart_test_phase=7`, current in quiet state, all new fields and `rx_framing_errors` after 2, 10 and 30 minutes without commanding the motor.
-5. When physically safe, command OPEN briefly then STOP; take measurements before and after moving and several minutes after it stops. Compare the three motion-state buckets, the GPIO vs chained STOP buckets and rejected Tuya frames.
+5. When physically safe, command OPEN briefly then STOP; take measurements before and after moving and several minutes after it stops. Compare the three motion-state STOP-error buckets, the GPIO vs chained STOP buckets, **the three GPIO-start denominators**, and rejected Tuya frames. Per-state error totals alone are biased by different traffic volume; compare rates where the source is GPIO (bad-stop-on-GPIO / GPIO-starts-in-state). The chained STOP errors are not included in these GPIO-only ratios.
 6. If **bad stops are predominantly GPIO-first**, investigate spurious P0.17 falling-edge events and actual start-bit alignment; if **mostly chained**, investigate `P3_RX_NEXT_START` resynchronization. If mostly when last MCU DP1 reports moving, measure motor-induced interference; correlation alone is not proof.
 7. If power rises materially from the previously measured v42.0-37 baseline **0.03–0.05 mA** or data reception regresses, revert to the saved build. Test over multiple runs before changing `P3_FIRST_SAMPLE_US` or adding an input filter.
 
