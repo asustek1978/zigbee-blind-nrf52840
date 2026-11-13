@@ -1071,8 +1071,10 @@ int main(void)
             blind_ctx.rx_wake_count = p3_soft_uart_dma_bytes();
             blind_ctx.stress_failed = p3_soft_uart_handoff_errors();
             blind_ctx.stress_resume_err = p3_soft_uart_hardware_errors();
-            blind_ctx.rx_last_error = p3_soft_uart_overflows() ? 1U :
-                                       (p3_soft_uart_framing_errors() ? 2U : 0U);
+            blind_ctx.rx_last_error = p3_soft_uart_hardware_errors() ? 4U :
+                                       (p3_soft_uart_handoff_errors() ? 3U :
+                                       (p3_soft_uart_overflows() ? 1U :
+                                       (p3_soft_uart_framing_errors() ? 2U : 0U)));
             last_progress = now;
         }
     }
@@ -1085,9 +1087,12 @@ int main(void)
     blind_ctx.rx_wake_count = p3_soft_uart_dma_bytes();
     blind_ctx.stress_failed = p3_soft_uart_handoff_errors();
     blind_ctx.stress_resume_err = p3_soft_uart_hardware_errors();
-    blind_ctx.rx_last_error = p3_soft_uart_overflows() ? 1U :
-                               (p3_soft_uart_framing_errors() ? 2U : 0U);
+    blind_ctx.rx_last_error = p3_soft_uart_hardware_errors() ? 4U :
+                               (p3_soft_uart_handoff_errors() ? 3U :
+                               (p3_soft_uart_overflows() ? 1U :
+                               (p3_soft_uart_framing_errors() ? 2U : 0U)));
     if (parser.used != 0U) blind_ctx.stress_rx_timeout++;
+    p3_soft_uart_stop();
     blind_ctx.uart_test_phase = 9U;
     return 0;
 }
