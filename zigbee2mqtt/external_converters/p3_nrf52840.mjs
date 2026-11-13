@@ -1,4 +1,4 @@
-/* Experimental v42.0-32 passive software UART diagnostics.
+/* Experimental v42.0-34 hybrid wake-on-Tuya-0x55 UART diagnostics.
  * Never sends UART motor commands. Diagnostic reads use Zigbee Basic cluster.
  */
 import * as fz from 'zigbee-herdsman-converters/converters/fromZigbee';
@@ -17,6 +17,10 @@ const diagnosticAttributes = {
     tuya_frames_ok: 0xF133,
     tuya_frames_rejected: 0xF134,
     stress_rx_bytes: 0xF12C,
+    uart_wake_count: 0xF135,
+    uart_dma_bytes: 0xF136,
+    uart_handoff_errors: 0xF12A,
+    uart_hardware_errors: 0xF12F,
     stress_elapsed_s: 0xF132,
     uart_test_phase: 0xF121,
     diag_last_command: 0xF105,
@@ -43,7 +47,7 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v42.0-32 continuous software UART RX diagnostic',
+    description: 'P3 nRF52840 v42.0-34 TIMER3 first-byte plus UARTE EasyDMA RX diagnostics',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee],
     exposes: [
