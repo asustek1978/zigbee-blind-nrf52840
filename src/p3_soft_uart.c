@@ -59,6 +59,21 @@ static atomic_t uart_hw_errors;
 /* v42.0-39: read-only counters; no changes to IRQ timing or UART duty cycle. */
 static atomic_t software_nonheader_bytes;
 static atomic_t uart_hw_last_source;
+/* v42.0-40: classify bad software STOP bits, never modify sampling timings.
+ * DP1 is the last VALID report from the MCU: 0=open, 1=stop, 2=close.
+ * 3=unknown until a valid DP1 is received; it is not a motion sensor.
+ */
+static atomic_t rx_reported_motion = ATOMIC_INIT(3);
+static atomic_t rx_gpio_start_events;
+static atomic_t rx_last_gpio_start_ms;
+static atomic_t rx_bad_stop_gpio;
+static atomic_t rx_bad_stop_chained;
+static atomic_t rx_bad_stop_reported_idle;
+static atomic_t rx_bad_stop_reported_moving;
+static atomic_t rx_bad_stop_motion_unknown;
+static atomic_t rx_last_bad_stop_ms;
+static atomic_t rx_last_bad_stop_byte;
+static volatile bool rx_origin_gpio;
 static uint8_t shift_byte;
 static uint8_t bit_index;
 static bool uart_prepared;
@@ -184,7 +199,25 @@ static void timer3_irq(const void *unused)
              */
             atomic_inc(&software_nonheader_bytes);
         } else {
+            /* Error-path-only sampling: classify before the existing
+             * resynchronization behavior, leaving the 0x55 handoff fast.
+             */
             atomic_inc(&framing_errors);
+            if (rx_origin_gpio) {
+                atomic_inc(&rx_bad_stop_gpio);
+            } else {
+                atomic_inc(&rx_bad_stop_chained);
+            }
+            const atomic_val_t motion = atomic_get(&rx_reported_motion);
+            if (motion == 1) {
+                atomic_inc(&rx_bad_stop_reported_idle);
+            } else if (motion == 0 || motion == 2) {
+                atomic_inc(&rx_bad_stop_reported_moving);
+            } else {
+                atomic_inc(&rx_bad_stop_motion_unknown);
+            }
+            atomic_set(&rx_last_bad_stop_byte, (atomic_val_t)shift_byte);
+            atomic_set(&rx_last_bad_stop_ms, (atomic_val_t)k_uptime_get_32());
         }
         /* No 0x55 preamble: continue software sampling and keep
          * the hardware peripheral completely powered down.
@@ -203,6 +236,7 @@ static void timer3_irq(const void *unused)
         shift_byte = 0U;
         bit_index = 0U;
         rx_phase = P3_RX_DATA;
+        rx_origin_gpio = false; /* follow-on byte, not GPIO wake */
         nrf_timer_cc_set(NRF_TIMER3, NRF_TIMER_CC_CHANNEL0,
                          P3_BIT_US);
         return;
@@ -230,12 +264,16 @@ static void rx_start_irq(const struct device *port,
     shift_byte = 0U;
     bit_index = 0U;
     rx_phase = P3_RX_DATA;
+    rx_origin_gpio = true; /* tag byte whose start was a GPIO edge */
     nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_CLEAR);
     nrf_timer_cc_set(NRF_TIMER3, NRF_TIMER_CC_CHANNEL0,
                      P3_FIRST_SAMPLE_US);
     nrf_timer_event_clear(NRF_TIMER3, NRF_TIMER_EVENT_COMPARE0);
     nrf_timer_int_enable(NRF_TIMER3, NRF_TIMER_INT_COMPARE0_MASK);
     nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_START);
+    /* Account AFTER arming TIMER3 so first-byte timing stays unchanged. */
+    atomic_inc(&rx_gpio_start_events);
+    atomic_set(&rx_last_gpio_start_ms, (atomic_val_t)k_uptime_get_32());
 }
 
 static void p3_uarte_service(void)
@@ -413,4 +451,54 @@ uint32_t p3_soft_uart_software_nonheader_bytes(void)
 uint32_t p3_soft_uart_last_hw_errorsrc(void)
 {
     return (uint32_t)atomic_get(&uart_hw_last_source);
+}
+
+/* Only accepted DP1 status reports may update classification; do not
+ * fabricate a motor state from Zigbee command requests.
+ */
+void p3_soft_uart_set_mcu_motion(uint8_t dp1)
+{
+    if (dp1 <= 2U) {
+        atomic_set(&rx_reported_motion, (atomic_val_t)dp1);
+    }
+}
+uint32_t p3_soft_uart_reported_motion(void)
+{
+    return (uint32_t)atomic_get(&rx_reported_motion);
+}
+uint32_t p3_soft_uart_gpio_start_events(void)
+{
+    return (uint32_t)atomic_get(&rx_gpio_start_events);
+}
+uint32_t p3_soft_uart_last_gpio_start_ms(void)
+{
+    return (uint32_t)atomic_get(&rx_last_gpio_start_ms);
+}
+uint32_t p3_soft_uart_bad_stop_gpio(void)
+{
+    return (uint32_t)atomic_get(&rx_bad_stop_gpio);
+}
+uint32_t p3_soft_uart_bad_stop_chained(void)
+{
+    return (uint32_t)atomic_get(&rx_bad_stop_chained);
+}
+uint32_t p3_soft_uart_bad_stop_reported_idle(void)
+{
+    return (uint32_t)atomic_get(&rx_bad_stop_reported_idle);
+}
+uint32_t p3_soft_uart_bad_stop_reported_moving(void)
+{
+    return (uint32_t)atomic_get(&rx_bad_stop_reported_moving);
+}
+uint32_t p3_soft_uart_bad_stop_motion_unknown(void)
+{
+    return (uint32_t)atomic_get(&rx_bad_stop_motion_unknown);
+}
+uint32_t p3_soft_uart_last_bad_stop_ms(void)
+{
+    return (uint32_t)atomic_get(&rx_last_bad_stop_ms);
+}
+uint32_t p3_soft_uart_last_bad_stop_byte(void)
+{
+    return (uint32_t)atomic_get(&rx_last_bad_stop_byte);
 }
