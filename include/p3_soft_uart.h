@@ -13,3 +13,6 @@ uint32_t p3_soft_uart_uarte_wakes(void);
 uint32_t p3_soft_uart_dma_bytes(void);
 uint32_t p3_soft_uart_handoff_errors(void);
 uint32_t p3_soft_uart_hardware_errors(void);
+/* v42.0-39, diagnostics only; no RX behavior/timing changes. */
+uint32_t p3_soft_uart_software_nonheader_bytes(void);
+uint32_t p3_soft_uart_last_hw_errorsrc(void);
