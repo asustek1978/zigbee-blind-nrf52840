@@ -300,16 +300,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-34-SOFT-UART-UNVERIFIED.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-34-HYBRID-UARTE-UNVERIFIED.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-34-SOFT-UART-UNVERIFIED.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-34-SOFT-UART-UNVERIFIED.uf2
+            sha256sum P3-NRF52840-v42-0-34-HYBRID-UARTE-UNVERIFIED.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-34-HYBRID-UARTE-UNVERIFIED.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-34-SOFT-UART-UNVERIFIED.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-34-HYBRID-UARTE-UNVERIFIED.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
           P3-NRF52840 v42.0-34 HYBRID TIMER3 + UARTE EASYDMA EXPERIMENT
           UNVERIFIED / NOT FLASH-READY. Experimental code, compilation,
@@ -330,7 +330,7 @@ jobs:
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-34-SOFT-UART-UNVERIFIED-UF2
+          name: P3-NRF52840-v42-0-34-HYBRID-UARTE-UNVERIFIED-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
