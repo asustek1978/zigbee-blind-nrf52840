@@ -187,7 +187,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '3', '1'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '3', '2'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -1000,7 +1000,7 @@ int main(void)
             BLIND_ENDPOINT, IS_ENABLED(CONFIG_P3_UART_TX_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_POSITION_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_BATTERY_ENABLE));
-    /* v42.0-29: continuous RX with exposed Zigbee diagnostics, 20 minutes after 30s startup.
+    /* v42.0-32: software UART RX with continuous byte chaining, 20 minutes after 30s startup.
      * No UART suspend/resume and no motor TX, query, STOP, or DP writes.
      * Parser persists across the entire receive period.
      * This is a temporary high-current experiment, not production firmware.
@@ -1060,13 +1060,20 @@ int main(void)
             blind_ctx.stress_cycles++;
             blind_ctx.stress_ok++;
             blind_ctx.stress_elapsed_s = (now - started) / 1000U;
+            /* v42.0-32: report software UART errors during the test,
+             * not only at the end of the 20-minute window.
+             */
+            blind_ctx.rx_error_count = p3_soft_uart_framing_errors() +
+                                       p3_soft_uart_overflows();
+            blind_ctx.rx_last_error = p3_soft_uart_overflows() ? 1U :
+                                       (p3_soft_uart_framing_errors() ? 2U : 0U);
             last_progress = now;
         }
     }
     blind_ctx.stress_elapsed_s = (k_uptime_get_32() - started) / 1000U;
-    blind_ctx.rx_header_count += 0U;
     blind_ctx.rx_error_count = p3_soft_uart_framing_errors() + p3_soft_uart_overflows();
-    blind_ctx.rx_last_error = p3_soft_uart_overflows();
+    blind_ctx.rx_last_error = p3_soft_uart_overflows() ? 1U :
+                               (p3_soft_uart_framing_errors() ? 2U : 0U);
     if (parser.used != 0U) blind_ctx.stress_rx_timeout++;
     blind_ctx.uart_test_phase = 9U;
     return 0;
