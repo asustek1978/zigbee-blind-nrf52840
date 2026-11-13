@@ -19,8 +19,8 @@ const diagnosticAttributes = {
     stress_rx_bytes: 0xF12C,
     stress_elapsed_s: 0xF132,
     uart_test_phase: 0xF121,
-    diag_last_command: 0xF10B,
-    diag_last_format: 0xF10C,
+    diag_last_command: 0xF105,
+    diag_last_format: 0xF106,
 };
 const diagnosticFromZigbee = {
     cluster: 'genBasic',
