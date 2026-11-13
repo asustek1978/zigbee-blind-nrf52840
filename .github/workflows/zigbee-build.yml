@@ -33,6 +33,7 @@ on:
       - experiment/v42-0-35-continuous-hybrid-rx
       - experiment/v42-0-36-zigbee-control-hybrid
       - experiment/v42-0-37-zigbee-fast-poll-uart-wake
+      - experiment/v42-0-38-zigbee-ota-readiness
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -114,6 +115,28 @@ jobs:
       - name: Check HW-954 source Flash partition contract
         run: |
           python3 app/tools/check_board_flash_map.py             app/boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts
+
+      - name: Audit Zigbee OTA flash readiness (never overwrite UF2 bootloader)
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostic
+          python3 app/tools/check_zigbee_ota_readiness.py \
+            app/boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts \
+            app/prj.conf | tee diagnostic/ota_readiness.json
+          PYTHONPATH=app/tools python3 -m unittest discover \
+            -s app/tests -p 'test_zigbee_ota_readiness.py' -v
+          python3 - <<'PY'
+          import json
+          with open('diagnostic/ota_readiness.json') as f:
+              audit = json.load(f)
+          if audit['zigbee_ota_ready'] or audit['ota_image_generation_allowed']:
+              raise SystemExit('::error::OTA marked ready without verified MCUboot and flash staging')
+          print('PASS: existing UF2 bootloader and protected flash regions are guarded; Zigbee OTA NOT enabled')
+          PY
+          if grep -qx 'CONFIG_ZIGBEE_FOTA=y' app/prj.conf; then
+            echo '::error::OTA client must not be enabled before verified bootloader and staging plan'
+            exit 1
+          fi
 
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |
@@ -334,6 +357,7 @@ jobs:
           mkdir -p release
           cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-37-FAST-ZIGBEE-UART-BENCH-UNVERIFIED.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
+          cp diagnostic/ota_readiness.json release/OTA_READINESS_BLOCKED.json
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
