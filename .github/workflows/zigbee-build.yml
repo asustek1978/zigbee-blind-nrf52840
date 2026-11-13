@@ -27,6 +27,7 @@ on:
       - experiment/v42-0-27-rx-edge-wakeup
       - experiment/v42-0-28-continuous-uart-rx
       - experiment/v42-0-29-rx-diagnostics
+      - experiment/v42-0-31-gpiote-timer-soft-uart
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -182,7 +183,9 @@ jobs:
           # v42.0-28: passive continuous RX, no GPIO wake or motor UART TX.
           grep -q 'while ((uint32_t)(k_uptime_get_32() - started) < 1200000U)' app/src/main.c
           grep -q 'tuya_parser_feed(&parser' app/src/main.c
-          grep -q 'uart_poll_in(uart, &received)' app/src/main.c
+          grep -q 'p3_soft_uart_read(&received' app/src/main.c
+          grep -q 'src/p3_soft_uart.c' app/CMakeLists.txt
+          grep -q 'nrf_timer_event_check' app/src/p3_soft_uart.c
           grep -q 'P3_RX_HEADER_COUNT 0xF137U' app/src/main.c
           grep -q 'P3_RX_ERROR_COUNT 0xF138U' app/src/main.c
           grep -q 'P3_RX_FIRST4 0xF139U' app/src/main.c
