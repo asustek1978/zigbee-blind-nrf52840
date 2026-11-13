@@ -65,6 +65,9 @@ static atomic_t uart_hw_last_source;
  */
 static atomic_t rx_reported_motion = ATOMIC_INIT(3);
 static atomic_t rx_gpio_start_events;
+static atomic_t rx_gpio_starts_reported_idle;
+static atomic_t rx_gpio_starts_reported_moving;
+static atomic_t rx_gpio_starts_motion_unknown;
 static atomic_t rx_last_gpio_start_ms;
 static atomic_t rx_bad_stop_gpio;
 static atomic_t rx_bad_stop_chained;
@@ -274,6 +277,14 @@ static void rx_start_irq(const struct device *port,
     /* Account AFTER arming TIMER3 so first-byte timing stays unchanged. */
     atomic_inc(&rx_gpio_start_events);
     atomic_set(&rx_last_gpio_start_ms, (atomic_val_t)k_uptime_get_32());
+    const atomic_val_t motion = atomic_get(&rx_reported_motion);
+    if (motion == 1) {
+        atomic_inc(&rx_gpio_starts_reported_idle);
+    } else if (motion == 0 || motion == 2) {
+        atomic_inc(&rx_gpio_starts_reported_moving);
+    } else {
+        atomic_inc(&rx_gpio_starts_motion_unknown);
+    }
 }
 
 static void p3_uarte_service(void)
@@ -473,6 +484,18 @@ uint32_t p3_soft_uart_gpio_start_events(void)
 uint32_t p3_soft_uart_last_gpio_start_ms(void)
 {
     return (uint32_t)atomic_get(&rx_last_gpio_start_ms);
+}
+uint32_t p3_soft_uart_gpio_starts_reported_idle(void)
+{
+    return (uint32_t)atomic_get(&rx_gpio_starts_reported_idle);
+}
+uint32_t p3_soft_uart_gpio_starts_reported_moving(void)
+{
+    return (uint32_t)atomic_get(&rx_gpio_starts_reported_moving);
+}
+uint32_t p3_soft_uart_gpio_starts_motion_unknown(void)
+{
+    return (uint32_t)atomic_get(&rx_gpio_starts_motion_unknown);
 }
 uint32_t p3_soft_uart_bad_stop_gpio(void)
 {
