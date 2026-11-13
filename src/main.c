@@ -187,7 +187,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '3', '4'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '3', '5'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -1000,10 +1000,11 @@ int main(void)
             BLIND_ENDPOINT, IS_ENABLED(CONFIG_P3_UART_TX_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_POSITION_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_BATTERY_ENABLE));
-    /* v42.0-34: hybrid TIMER3 first byte and wake-on-preamble UARTE RX, 20-minute test.
-     * No UART suspend/resume and no motor TX, query, STOP, or DP writes.
-     * Parser persists across the entire receive period.
-     * This is a temporary high-current experiment, not production firmware.
+    /* v42.0-35: continuous passive hybrid TIMER3 + UARTE + EasyDMA RX.
+     * No motor TX, query, STOP, or DP writes. The parser persists.
+     * Each UARTE RX burst still ends after ~15 ms idle; only the
+     * overall 20-minute diagnostic limit has been removed.
+     * Experimental, not a production actuator.
      */
     k_sleep(K_SECONDS(30));
     blind_ctx.uart_test_phase = 1U;
@@ -1019,7 +1020,11 @@ int main(void)
     uint32_t sample_count = 0U;
     uint32_t previous_rejected = 0U;
     uint32_t last_progress = started;
-    while ((uint32_t)(k_uptime_get_32() - started) < 1200000U) {
+    /* v42.0-35: continuous passive monitoring. Never stop after
+     * 1200 s; UARTE itself is still disabled after every idle burst.
+     * Keep the same proven timer->UARTE handoff as v42.0-34.
+     */
+    while (true) {
         uint8_t received = 0U;
         blind_ctx.uart_rx_attempts++;
         rc = p3_soft_uart_read(&received, K_MSEC(100));
@@ -1078,21 +1083,5 @@ int main(void)
             last_progress = now;
         }
     }
-    blind_ctx.stress_elapsed_s = (k_uptime_get_32() - started) / 1000U;
-    blind_ctx.rx_error_count = p3_soft_uart_framing_errors() +
-                               p3_soft_uart_overflows() +
-                               p3_soft_uart_hardware_errors() +
-                               p3_soft_uart_handoff_errors();
-    blind_ctx.rx_edge_count = p3_soft_uart_uarte_wakes();
-    blind_ctx.rx_wake_count = p3_soft_uart_dma_bytes();
-    blind_ctx.stress_failed = p3_soft_uart_handoff_errors();
-    blind_ctx.stress_resume_err = p3_soft_uart_hardware_errors();
-    blind_ctx.rx_last_error = p3_soft_uart_hardware_errors() ? 4U :
-                               (p3_soft_uart_handoff_errors() ? 3U :
-                               (p3_soft_uart_overflows() ? 1U :
-                               (p3_soft_uart_framing_errors() ? 2U : 0U)));
-    if (parser.used != 0U) blind_ctx.stress_rx_timeout++;
-    p3_soft_uart_stop();
-    blind_ctx.uart_test_phase = 9U;
-    return 0;
+    /* Unreachable in normal operation: passive RX stays running. */
 }
