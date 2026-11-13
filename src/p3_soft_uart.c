@@ -54,6 +54,9 @@ static atomic_t uart_wake_count;
 static atomic_t uart_dma_bytes;
 static atomic_t uart_handoff_errors;
 static atomic_t uart_hw_errors;
+/* v42.0-39: read-only counters; no changes to IRQ timing or UART duty cycle. */
+static atomic_t software_nonheader_bytes;
+static atomic_t uart_hw_last_source;
 static uint8_t shift_byte;
 static uint8_t bit_index;
 static bool uart_prepared;
@@ -174,6 +177,10 @@ static void timer3_irq(const void *unused)
                 p3_uart_begin_dma();
                 return;
             }
+            /* Count completed software bytes that are not a Tuya header,
+             * without filtering or changing the proven receiver path.
+             */
+            atomic_inc(&software_nonheader_bytes);
         } else {
             atomic_inc(&framing_errors);
         }
@@ -243,6 +250,7 @@ static void p3_uarte_service(void)
         NRF_UARTE0->EVENTS_ERROR = 0U;
         uint32_t cause = NRF_UARTE0->ERRORSRC;
         NRF_UARTE0->ERRORSRC = cause;
+        atomic_set(&uart_hw_last_source, (atomic_val_t)cause);
         atomic_inc(&uart_hw_errors);
     }
     const bool buffer_full = NRF_UARTE0->EVENTS_ENDRX != 0U;
@@ -395,4 +403,12 @@ uint32_t p3_soft_uart_handoff_errors(void)
 uint32_t p3_soft_uart_hardware_errors(void)
 {
     return (uint32_t)atomic_get(&uart_hw_errors);
+}
+uint32_t p3_soft_uart_software_nonheader_bytes(void)
+{
+    return (uint32_t)atomic_get(&software_nonheader_bytes);
+}
+uint32_t p3_soft_uart_last_hw_errorsrc(void)
+{
+    return (uint32_t)atomic_get(&uart_hw_last_source);
 }
