@@ -62,7 +62,7 @@ class RxBreakdownTest(unittest.TestCase):
         self.assertRegex(
             self.rx,
             r"if \(shift_byte == 0x55U\) \{\s*p3_uart_begin_dma\(\);\s*return;\s*\}\s*"
-            r"/\* Count completed software bytes[\\s\\S]*?\*/\s*atomic_inc\(&software_nonheader_bytes\);",
+            r"/\* Count completed software bytes[\s\S]*?\*/\s*atomic_inc\(&software_nonheader_bytes\);",
         )
         self.assertIn("atomic_set(&uart_hw_last_source, (atomic_val_t)cause)", self.rx)
 
