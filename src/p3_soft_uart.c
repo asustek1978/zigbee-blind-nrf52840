@@ -328,6 +328,27 @@ int p3_soft_uart_start(void)
                                         GPIO_INT_EDGE_FALLING);
 }
 
+void p3_soft_uart_stop(void)
+{
+    if (atomic_get(&uart_active)) {
+        NRF_UARTE0->EVENTS_RXTO = 0U;
+        NRF_UARTE0->TASKS_STOPRX = 1U;
+        for (uint32_t elapsed = 0U;
+             elapsed < P3_UART_RXTO_WAIT_US; elapsed += 10U) {
+            if (NRF_UARTE0->EVENTS_RXTO != 0U) {
+                break;
+            }
+            k_busy_wait(10);
+        }
+    }
+    p3_uart_disable();
+    atomic_clear(&uart_active);
+    nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_STOP);
+    nrf_timer_int_disable(NRF_TIMER3, NRF_TIMER_INT_COMPARE0_MASK);
+    (void)gpio_pin_interrupt_configure(gpio, P3_RX_PIN, GPIO_INT_DISABLE);
+    atomic_clear(&active);
+}
+
 int p3_soft_uart_read(uint8_t *byte, k_timeout_t timeout)
 {
     p3_uarte_service();
