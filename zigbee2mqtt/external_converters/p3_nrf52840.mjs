@@ -1,4 +1,4 @@
-/* Experimental v42.0-39: isolate software RX error sources while preserving
+/* Experimental v42.0-40: classify software start/STOP failures without changing
  * v42.0-37 fast Zigbee polling and low-power hybrid TIMER3/UARTE0 RX +
  * independent UARTE1 motor TX only for explicitly requested Zigbee cover
  * open/close/stop/position. NO startup motor traffic or calibration.
@@ -31,6 +31,16 @@ const diagnosticAttributes = {
     rx_software_starts: 0xF13E,
     rx_software_nonheader: 0xF13F,
     uart_last_errorsrc: 0xF140,
+    rx_gpio_start_events: 0xF141,
+    rx_last_gpio_start_ms: 0xF142,
+    rx_bad_stop_gpio: 0xF143,
+    rx_bad_stop_chained: 0xF144,
+    rx_bad_stop_reported_idle: 0xF145,
+    rx_bad_stop_reported_moving: 0xF146,
+    rx_bad_stop_motion_unknown: 0xF147,
+    rx_last_bad_stop_ms: 0xF148,
+    rx_last_bad_stop_byte: 0xF149,
+    rx_reported_motion: 0xF14A,
     tuya_frames_ok: 0xF133,
     tuya_frames_rejected: 0xF134,
     stress_rx_bytes: 0xF12C,
@@ -49,6 +59,16 @@ const diagnosticDescriptions = {
     rx_software_starts: 'First-bit sampling attempts by TIMER3; not necessarily valid Tuya frames',
     rx_software_nonheader: 'Software-decoded bytes other than 0x55; possible partial or noisy traffic',
     uart_last_errorsrc: 'Last raw nRF UARTE0 ERRORSRC register (0 if no hardware error)',
+    rx_gpio_start_events: 'Number of accepted GPIO P0.17 falling edges while software UART idle',
+    rx_last_gpio_start_ms: 'Uptime in ms of last GPIO start edge; coarse time, not bit timing',
+    rx_bad_stop_gpio: 'Bad software UART STOP bit on first byte triggered by GPIO edge',
+    rx_bad_stop_chained: 'Bad software UART STOP bit on subsequent chained software byte',
+    rx_bad_stop_reported_idle: 'Bad STOP bits while last MCU-reported DP1=1 (STOP); may be stale',
+    rx_bad_stop_reported_moving: 'Bad STOP bits while last MCU-reported DP1=0/2 (OPEN/CLOSE); may be stale',
+    rx_bad_stop_motion_unknown: 'Bad STOP bits before first valid MCU DP1 report',
+    rx_last_bad_stop_ms: 'Uptime in ms at last bad STOP bit (zero means none yet)',
+    rx_last_bad_stop_byte: 'Software-sampled 8 data bits from most recent bad STOP event (not a valid byte)',
+    rx_reported_motion: 'Last validated MCU DP1: 0=open, 1=stop, 2=close, 3=unknown; may lag actual movement',
 };
 const diagnosticFromZigbee = {
     cluster: 'genBasic',
@@ -71,7 +91,7 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v42.0-39 1s Zigbee parent poll and hybrid RX error breakdown (bench)',
+    description: 'P3 nRF52840 v42.0-40 start/stop-bit/motion diagnostics; 1s Zigbee poll, hybrid low-power RX (bench)',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee],
     exposes: [
