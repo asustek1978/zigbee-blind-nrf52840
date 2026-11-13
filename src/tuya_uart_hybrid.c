@@ -139,7 +139,11 @@ void tuya_uart_mark_zigbee_command(void)
     k_mutex_lock(&p3_diag_mutex, K_FOREVER);
     p3_diag.zigbee_commands++;
     k_mutex_unlock(&p3_diag_mutex);
-    p3_zcl_schedule_sync();
+    /* v42.0-37: do NOT schedule a Zigbee report before queueing TX.
+     * The ZCL callback is about to submit the motor command. A successful
+     * k_msgq_put immediately wakes transmit_main's K_FOREVER waiter.
+     * That TX worker schedules diagnostics after the hardware transfer.
+     */
 }
 
 static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
@@ -163,6 +167,7 @@ static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
     if (is_stop) {
         k_msgq_purge(&p3_tx_queue);
     }
+    /* Zephyr msgq wakes the blocked worker; no UART/queue poll timer. */
     return k_msgq_put(&p3_tx_queue, &msg, K_NO_WAIT) == 0;
 }
 
