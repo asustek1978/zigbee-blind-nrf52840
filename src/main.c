@@ -125,6 +125,9 @@
 #define P3_RX_LAST_BAD_STOP_MS 0xF148U
 #define P3_RX_LAST_BAD_STOP_BYTE 0xF149U
 #define P3_RX_REPORTED_MOTION 0xF14AU
+#define P3_RX_GPIO_STARTS_REPORTED_IDLE 0xF14BU
+#define P3_RX_GPIO_STARTS_REPORTED_MOVING 0xF14CU
+#define P3_RX_GPIO_STARTS_MOTION_UNKNOWN 0xF14DU
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -203,6 +206,9 @@ struct blind_device_context {
     zb_uint32_t rx_last_bad_stop_ms;
     zb_uint32_t rx_last_bad_stop_byte;
     zb_uint32_t rx_reported_motion;
+    zb_uint32_t rx_gpio_starts_reported_idle;
+    zb_uint32_t rx_gpio_starts_reported_moving;
+    zb_uint32_t rx_gpio_starts_motion_unknown;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -462,6 +468,9 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_RX_BAD_STOP_MOTION_UNKNOWN, &blind_ctx.rx_bad_stop_mot
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_LAST_BAD_STOP_MS, &blind_ctx.rx_last_bad_stop_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_LAST_BAD_STOP_BYTE, &blind_ctx.rx_last_bad_stop_byte, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_REPORTED_MOTION, &blind_ctx.rx_reported_motion, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_GPIO_STARTS_REPORTED_IDLE, &blind_ctx.rx_gpio_starts_reported_idle, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_GPIO_STARTS_REPORTED_MOVING, &blind_ctx.rx_gpio_starts_reported_moving, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_GPIO_STARTS_MOTION_UNKNOWN, &blind_ctx.rx_gpio_starts_motion_unknown, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -1148,6 +1157,9 @@ int main(void)
             blind_ctx.rx_last_bad_stop_ms = p3_soft_uart_last_bad_stop_ms();
             blind_ctx.rx_last_bad_stop_byte = p3_soft_uart_last_bad_stop_byte();
             blind_ctx.rx_reported_motion = p3_soft_uart_reported_motion();
+            blind_ctx.rx_gpio_starts_reported_idle = p3_soft_uart_gpio_starts_reported_idle();
+            blind_ctx.rx_gpio_starts_reported_moving = p3_soft_uart_gpio_starts_reported_moving();
+            blind_ctx.rx_gpio_starts_motion_unknown = p3_soft_uart_gpio_starts_motion_unknown();
             blind_ctx.rx_error_count = blind_ctx.rx_framing_errors +
                                        blind_ctx.rx_ring_overflows +
                                        p3_soft_uart_hardware_errors() +
