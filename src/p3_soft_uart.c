@@ -89,7 +89,7 @@ static void timer3_irq(const void *unused)
      * This is diagnostic only, not a correction for already late samples.
      */
     nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_CAPTURE1);
-    uint32_t lag = nrf_timer_cc_read(NRF_TIMER3, NRF_TIMER_CC_CHANNEL1);
+    uint32_t lag = nrf_timer_cc_get(NRF_TIMER3, NRF_TIMER_CC_CHANNEL1);
     if (lag > P3_LATE_IRQ_THRESHOLD_US) {
         atomic_inc(&timer_late_count);
     }
