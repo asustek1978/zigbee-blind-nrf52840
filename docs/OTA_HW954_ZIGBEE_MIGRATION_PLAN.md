@@ -6,7 +6,7 @@
 Source audit: `tools/check_zigbee_ota_readiness.py` checks `boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts` and `prj.conf`; `--require-ready` exits nonzero unless all prerequisites are satisfied. Current status is deliberately **BLOCKED**, even if flags are toggled, because the physical HW-954 bootloader has not been read back and verified. CI runs the audit and attaches `OTA_READINESS_BLOCKED.json`. Never weaken the guard merely to make CI green.
 
 ## Why existing HW-954 cannot safely install a Zigbee OTA image yet
-The current **source-defined, not hardware-verified** nRF52840 flash map:
+The current **source-defined** nRF52840 flash map (memory layout is not fully verified by a physical flash/UICR readback):
 | Range | Size | Existing purpose |
 |---|---:|---|
 | 0x00000–0x25FFF | 152 KiB | Existing SoftDevice/reserved |
