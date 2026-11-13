@@ -33,6 +33,11 @@
 
 #define BLIND_ENDPOINT 10
 #define BLIND_REPORT_RECORDS 8
+/* ZBOSS R23 minimum long poll is four quarter-seconds (1000 ms).
+ * Five times faster than the previous 5000-ms sleepy Zigbee polling,
+ * without changing to always-on-radio router behavior.
+ */
+#define P3_ZIGBEE_POLL_INTERVAL_MS 1000U
 
 /* LocalDIY read-only Basic-cluster diagnostics. Standard lift/battery
  * reporting remains disabled until the physical motor semantics are proven.
@@ -188,7 +193,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '3', '6'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '3', '7'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -923,11 +928,13 @@ void zboss_signal_handler(zb_bufid_t bufid)
     if (signal == ZB_BDB_SIGNAL_DEVICE_REBOOT ||
         signal == ZB_BDB_SIGNAL_STEERING) {
         if (signal_status == RET_OK) {
-            /* v42.0-8: set AFTER successful join/rejoin, since ZBOSS
-             * restores the default long-poll interval on joining.
-             * Units are milliseconds; poll parent every 5000 ms.
+            /* v42.0-37: Zigbee parent buffers incoming commands while
+             * this battery End Device sleeps. Poll at 1-second intervals,
+             * the minimum ZBOSS long poll; always reapply after rejoin.
+             * Once a command arrives, k_msgq_put wakes the UARTE1 TX
+             * worker without waiting for an additional UART poll.
              */
-            zb_zdo_pim_set_long_poll_interval(5000);
+            zb_zdo_pim_set_long_poll_interval(P3_ZIGBEE_POLL_INTERVAL_MS);
             set_join_status_led(true);  /* Joined/rejoined: blue LED OFF */
         } else {
             set_join_status_led(false); /* Not joined: show status */
@@ -1001,13 +1008,11 @@ int main(void)
             BLIND_ENDPOINT, IS_ENABLED(CONFIG_P3_UART_TX_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_POSITION_ENABLE),
             IS_ENABLED(CONFIG_P3_ZCL_BATTERY_ENABLE));
-    /* v42.0-36: continuous RX on UARTE0 + independent user-only TX on UARTE1.
-     * Motor TX only on explicit Zigbee requests. No unsolicited UART writes.
-     * UARTE0 RX still powers down after ~15 ms idle; only the
-     * overall 20-minute diagnostic limit has been removed.
-     * Experimental, not a production actuator.
+    /* v42.0-37: start low-power RX immediately, NOT 30 seconds after
+     * boot. The v42.0-36 startup delay rejected early Zigbee commands.
+     * TIMER3 remains on GPIO wake; UARTE0 sleeps between MCU frames.
+     * UARTE1 is armed by the command queue only after RX is ready.
      */
-    k_sleep(K_SECONDS(30));
     blind_ctx.uart_test_phase = 1U;
     int rc = p3_soft_uart_start();
     blind_ctx.uart_init_rc = (uint32_t)(int32_t)rc;
@@ -1022,7 +1027,7 @@ int main(void)
     uint32_t sample_count = 0U;
     uint32_t previous_rejected = 0U;
     uint32_t last_progress = started;
-    /* v42.0-36: continuous RX plus independent UARTE1 Zigbee TX. Never stop after
+    /* v42.0-37: continuous RX plus independent Zigbee-woken UARTE1 TX. Never stop after
      * 1200 s; UARTE itself is still disabled after every idle burst.
      * Keep the same proven timer->UARTE handoff as v42.0-34.
      */
