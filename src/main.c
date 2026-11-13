@@ -19,6 +19,7 @@
 
 #include "tuya_uart.h"
 #include "tuya_frame.h"
+#include "p3_soft_uart.h"
 
 /* Select HA Window Covering device definition before ZBOSS header import. */
 #define ZB_HA_DEFINE_DEVICE_WINDOW_COVERING
@@ -186,7 +187,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '2', '9'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '3', '1'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -1005,9 +1006,8 @@ int main(void)
      * This is a temporary high-current experiment, not production firmware.
      */
     k_sleep(K_SECONDS(30));
-    const struct device *uart = DEVICE_DT_GET(DT_NODELABEL(uart0));
     blind_ctx.uart_test_phase = 1U;
-    int rc = device_init(uart);
+    int rc = p3_soft_uart_start();
     blind_ctx.uart_init_rc = (uint32_t)(int32_t)rc;
     if (rc != 0) { blind_ctx.uart_test_phase = 5U; return 0; }
     blind_ctx.uart_test_phase = 7U;
@@ -1022,8 +1022,8 @@ int main(void)
     while ((uint32_t)(k_uptime_get_32() - started) < 1200000U) {
         uint8_t received = 0U;
         blind_ctx.uart_rx_attempts++;
-        rc = uart_poll_in(uart, &received);
-        if (rc == 0) {
+        rc = p3_soft_uart_read(&received, K_MSEC(100));
+        if (rc == 1) {
             blind_ctx.stress_rx_bytes++;
             blind_ctx.uart_rx_byte = received;
             blind_ctx.uart_rx_rc = 0U;
@@ -1047,9 +1047,8 @@ int main(void)
                 blind_ctx.tuya_frames_rejected += parser.rejected - previous_rejected;
                 previous_rejected = parser.rejected;
             }
-        } else if (rc == -1) {
-            /* Zephyr uart_poll_in: -1 means no data, not a UART error. */
-            k_sleep(K_MSEC(1));
+        } else if (rc == 0) {
+            /* No buffered data: sleep until GPIO/TIMER receives a byte. */
         } else {
             blind_ctx.rx_error_count++;
             blind_ctx.rx_last_error = (uint32_t)(int32_t)rc;
@@ -1065,6 +1064,9 @@ int main(void)
         }
     }
     blind_ctx.stress_elapsed_s = (k_uptime_get_32() - started) / 1000U;
+    blind_ctx.rx_header_count += 0U;
+    blind_ctx.rx_error_count = p3_soft_uart_framing_errors() + p3_soft_uart_overflows();
+    blind_ctx.rx_last_error = p3_soft_uart_overflows();
     if (parser.used != 0U) blind_ctx.stress_rx_timeout++;
     blind_ctx.uart_test_phase = 9U;
     return 0;
