@@ -336,5 +336,13 @@ jobs:
       - name: Report build status
         if: steps.build.outcome == 'failure'
         run: |
-          echo "Diagnostic build failed; inspect zigbee-build-diagnostics artifact."
+          echo "::error::v42.0-33: west build failed. First compiler/linker errors:"
+          if [ -s build.log ]; then
+            grep -n -E 'fatal error:|error:|undefined reference|CMake Error|FAILED:|build stopped|No rule to make target' build.log | head -n 70 || true
+            echo "=== Last 80 lines of west build output ==="
+            tail -n 80 build.log
+          else
+            echo "::error::build.log was not generated"
+          fi
+          echo "::error::Diagnostic build failed. Artifact: zigbee-build-diagnostics"
           exit 1
