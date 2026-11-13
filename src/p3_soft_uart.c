@@ -21,7 +21,7 @@
 #include <hal/nrf_gpio.h>
 #include <hal/nrf_gpiote.h>
 #include <hal/nrf_uarte.h>
-#include <nrfx_ppi.h>
+#include <helpers/nrfx_gppi.h>
 #include "p3_soft_uart.h"
 
 #define P3_RX_PIN 17U
@@ -34,9 +34,9 @@ RING_BUF_DECLARE(p3_soft_ring, P3_RING_SIZE);
 K_SEM_DEFINE(p3_soft_rx_sem, 0, 1);
 
 static const struct device *const gpio = DEVICE_DT_GET(DT_NODELABEL(gpio0));
-static nrf_ppi_channel_t ppi_start;
-static nrf_ppi_channel_t ppi_disarm;
-static nrf_ppi_channel_group_t ppi_group;
+static nrfx_gppi_handle_t ppi_start;
+static nrfx_gppi_handle_t ppi_disarm;
+static nrfx_gppi_group_handle_t ppi_group;
 static atomic_t framing_errors;
 static atomic_t overflow_errors;
 static atomic_t start_count;
@@ -152,52 +152,61 @@ static void timer3_irq(const void *unused)
     rx_phase = P3_RX_DATA;
     shift_byte = 0U;
     bit_index = 0U;
-    (void)nrfx_ppi_group_enable(ppi_group);
+    nrfx_gppi_group_enable(ppi_group);
 }
 
+/* NCS 3.4 / Zephyr 4.4 uses nrfx_gppi (nrfx 4), not
+ * the removed nrfx_ppi legacy allocator.
+ * Keep channels isolated from Zigbee by using the shared allocator.
+ */
 static int p3_ppi_setup(uint32_t event_addr)
 {
-    nrfx_err_t err = nrfx_ppi_channel_alloc(&ppi_start);
-    if (err != NRFX_SUCCESS) {
-        return -ENOSPC;
+    const uint32_t start_task = (uint32_t)&NRF_TIMER3->TASKS_START;
+    const uint32_t clear_task = (uint32_t)&NRF_TIMER3->TASKS_CLEAR;
+    const uint32_t domain = nrfx_gppi_domain_id_get(event_addr);
+
+    int err = nrfx_gppi_group_alloc(domain, &ppi_group);
+    if (err != 0) {
+        return err;
     }
-    err = nrfx_ppi_channel_alloc(&ppi_disarm);
-    if (err != NRFX_SUCCESS) {
-        (void)nrfx_ppi_channel_free(ppi_start);
-        return -ENOSPC;
+    const uint32_t group_disable_task = nrfx_gppi_group_task_dis_addr(ppi_group);
+
+    /* First PPI channel: event -> TIMER3 START; fork -> TIMER3 CLEAR. */
+    err = nrfx_gppi_conn_alloc(event_addr, start_task, &ppi_start);
+    if (err != 0) {
+        goto error_group;
     }
-    err = nrfx_ppi_group_alloc(&ppi_group);
-    if (err != NRFX_SUCCESS) {
-        (void)nrfx_ppi_channel_free(ppi_disarm);
-        (void)nrfx_ppi_channel_free(ppi_start);
-        return -ENOSPC;
+    err = nrfx_gppi_ep_attach(clear_task, ppi_start);
+    if (err != 0) {
+        goto error_start;
     }
 
-    /* Event -> START with a fork to CLEAR in hardware. */
-    err = nrfx_ppi_channel_assign(ppi_start, event_addr,
-            (uint32_t)&NRF_TIMER3->TASKS_START);
-    if (err == NRFX_SUCCESS) {
-        err = nrfx_ppi_channel_fork_assign(ppi_start,
-            (uint32_t)&NRF_TIMER3->TASKS_CLEAR);
+    /* Second PPI channel: event -> disable both PPI channels on this edge.
+     * Simultaneous START, CLEAR and group-disable ordering requires physical
+     * validation; never assume runtime behavior from successful compilation.
+     */
+    err = nrfx_gppi_conn_alloc(event_addr, group_disable_task, &ppi_disarm);
+    if (err != 0) {
+        goto error_start;
     }
-    if (err == NRFX_SUCCESS) {
-        /* Same event -> PPI group disable, only once per burst. */
-        err = nrfx_ppi_channel_assign(ppi_disarm, event_addr,
-            nrfx_ppi_task_addr_group_disable_get(ppi_group));
+    err = nrfx_gppi_group_ep_add(ppi_group, start_task);
+    if (err != 0) {
+        goto error_disarm;
     }
-    if (err == NRFX_SUCCESS) {
-        err = nrfx_ppi_channel_include_in_group(ppi_start, ppi_group);
-    }
-    if (err == NRFX_SUCCESS) {
-        err = nrfx_ppi_channel_include_in_group(ppi_disarm, ppi_group);
-    }
-    if (err != NRFX_SUCCESS) {
-        (void)nrfx_ppi_group_free(ppi_group);
-        (void)nrfx_ppi_channel_free(ppi_disarm);
-        (void)nrfx_ppi_channel_free(ppi_start);
-        return -EIO;
+    err = nrfx_gppi_group_ep_add(ppi_group, group_disable_task);
+    if (err != 0) {
+        goto error_disarm;
     }
     return 0;
+
+error_disarm:
+    nrfx_gppi_group_disable(ppi_group);
+    nrfx_gppi_conn_free(event_addr, group_disable_task, ppi_disarm);
+error_start:
+    nrfx_gppi_conn_free(event_addr, start_task, ppi_start);
+error_group:
+    nrfx_gppi_group_free(ppi_group);
+    return err;
 }
 
 int p3_soft_uart_start(void)
@@ -246,7 +255,8 @@ int p3_soft_uart_start(void)
     nrf_timer_int_enable(NRF_TIMER3, NRF_TIMER_INT_COMPARE0_MASK);
     irq_enable(TIMER3_IRQn);
     /* No active timer and no CPU GPIO callback in idle. */
-    return nrfx_ppi_group_enable(ppi_group) == NRFX_SUCCESS ? 0 : -EIO;
+    nrfx_gppi_group_enable(ppi_group);
+    return 0;
 }
 
 int p3_soft_uart_read(uint8_t *byte, k_timeout_t timeout)
