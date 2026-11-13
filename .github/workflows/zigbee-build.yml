@@ -34,6 +34,7 @@ on:
       - experiment/v42-0-36-zigbee-control-hybrid
       - experiment/v42-0-37-zigbee-fast-poll-uart-wake
       - experiment/v42-0-39-rx-error-breakdown
+      - experiment/v42-0-40-rx-start-stop-motion-diag
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -121,6 +122,11 @@ jobs:
           PYTHONPATH=app/tools python3 -m unittest discover \
             -s app/tests -p 'test_rx_error_breakdown.py' -v
 
+      - name: Test v42.0-40 start/STOP/motion RX diagnostic contract
+        run: |
+          PYTHONPATH=app/tools python3 -m unittest discover \
+            -s app/tests -p 'test_rx_start_stop_motion.py' -v
+
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |
           mkdir workspace
@@ -156,7 +162,7 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Verify v42.0-39 GPIO/TIMER RX safety
+      - name: Verify v42.0-40 GPIO/TIMER RX safety
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
@@ -212,7 +218,7 @@ jobs:
           grep -q 'P3_UART_RX_WAIT_MS 0xF127U' app/src/main.c
           grep -q 'P3_STRESS_CYCLES 0xF128U' app/src/main.c
           grep -q 'P3_STRESS_ELAPSED_S 0xF132U' app/src/main.c
-          # v42.0-39: never stop passive RX at 1200 s, but UARTE still sleeps between bursts.
+          # v42.0-40: never stop passive RX at 1200 s, but UARTE still sleeps between bursts.
           grep -q 'while (true)' app/src/main.c
           if grep -q '1200000U' app/src/main.c; then
             echo '::error::Obsolete 1200-second receiver timeout remains'
@@ -244,6 +250,15 @@ jobs:
           grep -q 'P3_RX_SOFTWARE_STARTS 0xF13EU' app/src/main.c
           grep -q 'P3_RX_SOFTWARE_NONHEADER 0xF13FU' app/src/main.c
           grep -q 'P3_UART_LAST_ERRORSRC 0xF140U' app/src/main.c
+          grep -q 'P3_RX_GPIO_START_EVENTS 0xF141U' app/src/main.c
+          grep -q 'P3_RX_BAD_STOP_GPIO 0xF143U' app/src/main.c
+          grep -q 'P3_RX_BAD_STOP_CHAINED 0xF144U' app/src/main.c
+          grep -q 'P3_RX_BAD_STOP_REPORTED_IDLE 0xF145U' app/src/main.c
+          grep -q 'P3_RX_BAD_STOP_REPORTED_MOVING 0xF146U' app/src/main.c
+          grep -q 'P3_RX_REPORTED_MOTION 0xF14AU' app/src/main.c
+          grep -q 'rx_gpio_start_events: 0xF141' app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
+          grep -q 'rx_reported_motion: 0xF14A' app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
+          grep -q 'p3_soft_uart_set_mcu_motion(reported_motion)' app/src/tuya_uart_hybrid.c
           grep -q 'rx_framing_errors: 0xF13C' app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
           grep -q 'rx_ring_overflows: 0xF13D' app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
           grep -q 'p3_soft_uart_software_nonheader_bytes()' app/src/main.c
@@ -253,7 +268,7 @@ jobs:
           grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg" || { echo '::error::Zigbee motor TX expected on dedicated UARTE1'; exit 1; }
           grep -q 'NRF_UARTE0->RXD.PTR' app/src/p3_soft_uart.c
           grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
-          echo "=== v42.0-39 power configuration diagnostics ==="
+          echo "=== v42.0-40 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
           for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
             if ! grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -298,7 +313,7 @@ jobs:
           if grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"; then echo '::error::Calibration must be off'; exit 1; fi
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
           grep -q 'status = "okay";' app/boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts
-          echo "v42.0-39 CONFIG PASS: continuous UARTE0 hybrid RX + independent user-only UARTE1 TX."
+          echo "v42.0-40 CONFIG PASS: continuous UARTE0 hybrid RX + independent user-only UARTE1 TX."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -342,29 +357,30 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-39 UNVERIFIED experimental UF2
+      - name: Package P3-NRF52840 v42.0-40 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-39-RX-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-40-START-STOP-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-39-RX-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-39-RX-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
+            sha256sum P3-NRF52840-v42-0-40-START-STOP-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-40-START-STOP-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-39-RX-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-40-START-STOP-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-39 HYBRID TIMER3 + UARTE EASYDMA EXPERIMENT
+          P3-NRF52840 v42.0-40 HYBRID TIMER3 + UARTE EASYDMA EXPERIMENT
           UNVERIFIED / NOT FLASH-READY. Experimental code, compilation,
           timing, IRQ ownership, power draw and long-term frame capture
           have not yet been validated on a real HW-954 board.
           Motor UART TX is enabled ONLY for explicit Zigbee cover commands.
-          To test, physically connect HW-954 P0.20 TX -> motor RXD at 3.3V,
-          with motor TXD -> P0.17 and common GND. Never connect power pins.
+          Wiring already established on user test rig: HW-954 P0.20 TX
+          to motor RXD, motor TXD to P0.17 RX, and common ground.
+          Only use safe 3.3V UART signals; do not rewire while powered.
           Hybrid RX: TIMER3 captures first 0x55 while enabling UARTE0;
           UARTE0 EasyDMA captures later bytes; idle STOPRX powers down RX.
           Independent UARTE1 transmits requested OPEN/CLOSE/STOP/POSITION
@@ -374,9 +390,14 @@ jobs:
           Commands accepted after Zigbee delivery immediately wake a
           waiting UARTE1 EasyDMA TX worker via Zephyr message queue.
           The user measured 0.03-0.05mA after reboot on v42.0-37;
-          v42.0-39 current MUST be remeasured on the board.
+          v42.0-40 current MUST be remeasured on the board.
           RX error breakdown: framing, overflow, software starts,
           software bytes != 0x55, last Nordic ERRORSRC.
+          v42.0-40 adds source of bad stop bit (GPIO/chained), last
+          MCU DP1 (0 open / 1 stop / 2 close / 3 unknown), counters
+          by last reported state, coarse uptime ms and sampled data byte.
+          Motion attribution is last MCU reported state, not confirmed
+          physical motion. Power must be remeasured against v42.0-37.
           UART hybrid handoff, 15ms idle timeout and Zigbee fast poll
           are unchanged from v42.0-37; this is diagnostic-only.
           The hybrid RX handoff was measured on v42.0-34 and v42.0-35,
@@ -388,11 +409,11 @@ jobs:
           the known baseline v42.0-29 (1.39-1.41mA for RX enabled).
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-39 UNVERIFIED experimental UF2
+      - name: Upload P3-NRF52840 v42.0-40 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-39-RX-DIAG-LOWPOWER-BENCH-UNVERIFIED-UF2
+          name: P3-NRF52840-v42-0-40-START-STOP-DIAG-LOWPOWER-BENCH-UNVERIFIED-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
