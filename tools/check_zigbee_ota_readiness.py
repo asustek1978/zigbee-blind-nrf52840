@@ -80,7 +80,7 @@ def inspect(dts: str, conf: str) -> dict:
         reasons.append("no Zigbee OTA Upgrade client installed")
     # The checked-in DTS is NOT a readback of the actual device.
     # Never infer bootloader compatibility solely from build inputs.
-    reasons.append("physical HW-954 bootloader and recovery path have not been verified")
+    reasons.append("UF2 0.6.0 nice!nano identity confirmed; OTA installer, full bootloader/UICR backup and recovery path not verified")
     if partitions["uf2_app_guard"] is not None:
         reasons.append("existing 0xAD000..0xED000 guard is protected; never use it as staging")
 
