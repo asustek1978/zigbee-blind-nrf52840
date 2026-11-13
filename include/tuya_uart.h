@@ -7,11 +7,17 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "tuya_frame.h"
 
 /* Receive state is always available; motor TX is OFF by default (Kconfig).
  * True means accepted into a bounded UART queue, NOT physical completion.
  * Never auto-issue movement on boot or Zigbee network join.
  */
+/* v42.0-36: hybrid RX thread publishes received MCU reports. */
+void tuya_uart_set_rx_ready(bool ready);
+void tuya_uart_note_rx_byte(void);
+void tuya_uart_accept_report(const struct tuya_frame *frame);
+void tuya_uart_set_rejected_count(uint32_t rejected);
 void tuya_uart_mark_zigbee_command(void);
 bool tuya_uart_submit_action(enum tuya_motor_action action);
 bool tuya_uart_submit_position(uint8_t percent);
