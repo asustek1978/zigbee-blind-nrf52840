@@ -41,6 +41,9 @@ const diagnosticAttributes = {
     rx_last_bad_stop_ms: 0xF148,
     rx_last_bad_stop_byte: 0xF149,
     rx_reported_motion: 0xF14A,
+    rx_gpio_starts_reported_idle: 0xF14B,
+    rx_gpio_starts_reported_moving: 0xF14C,
+    rx_gpio_starts_motion_unknown: 0xF14D,
     tuya_frames_ok: 0xF133,
     tuya_frames_rejected: 0xF134,
     stress_rx_bytes: 0xF12C,
@@ -69,6 +72,9 @@ const diagnosticDescriptions = {
     rx_last_bad_stop_ms: 'Uptime in ms at last bad STOP bit (zero means none yet)',
     rx_last_bad_stop_byte: 'Software-sampled 8 data bits from most recent bad STOP event (not a valid byte)',
     rx_reported_motion: 'Last validated MCU DP1: 0=open, 1=stop, 2=close, 3=unknown; may lag actual movement',
+    rx_gpio_starts_reported_idle: 'Accepted RX GPIO falling edges while last reported MCU DP1=1 STOP',
+    rx_gpio_starts_reported_moving: 'Accepted RX GPIO falling edges while last reported MCU DP1=0/2 OPEN/CLOSE',
+    rx_gpio_starts_motion_unknown: 'Accepted RX GPIO falling edges before first validated MCU DP1',
 };
 const diagnosticFromZigbee = {
     cluster: 'genBasic',
