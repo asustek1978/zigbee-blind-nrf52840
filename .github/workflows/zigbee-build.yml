@@ -31,6 +31,7 @@ on:
       - experiment/v42-0-32-continuous-soft-uart
       - experiment/v42-0-34-hybrid-wakeup
       - experiment/v42-0-35-continuous-hybrid-rx
+      - experiment/v42-0-36-zigbee-control-hybrid
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -148,13 +149,17 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Verify v42.0-35 GPIO/TIMER RX safety
+      - name: Verify v42.0-36 GPIO/TIMER RX safety
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
-          grep -q 'src/tuya_uart_isolated.c' app/CMakeLists.txt
+          grep -q 'src/tuya_uart_hybrid.c' app/CMakeLists.txt
+          if grep -q 'src/tuya_uart_isolated.c' app/CMakeLists.txt; then
+            echo '::error::no-op TX stub still compiled'
+            exit 1
+          fi
           if grep -qF '  src/tuya_uart.c' app/CMakeLists.txt; then
-            echo '::error::UART worker still compiled'
+            echo '::error::Legacy UART0 RX/TX worker must not be compiled'
             exit 1
           fi
           grep -q 'zephyr,deferred-init;' app/app.overlay
@@ -173,6 +178,17 @@ jobs:
           cfg=build-nicenano/zephyr/.config
           grep -qx '^CONFIG_PM_DEVICE=y' "$cfg" || { echo '::error::CONFIG_PM_DEVICE is not enabled'; exit 1; }
           grep -q 'p3_soft_uart_start()' app/src/main.c
+          grep -q 'tuya_uart_set_rx_ready(true);' app/src/main.c
+          grep -q 'tuya_uart_accept_report(&decoded);' app/src/main.c
+          grep -q 'tuya_uart_submit_action(action)' app/src/main.c
+          grep -q 'tuya_uart_submit_position(percent)' app/src/main.c
+          grep -q 'NRF_UARTE1->TASKS_STARTTX = 1U' app/src/tuya_uart_hybrid.c
+          grep -q 'NRF_UARTE1->TASKS_STOPTX = 1U' app/src/tuya_uart_hybrid.c
+          grep -q 'NRF_UARTE1->ENABLE = 0U' app/src/tuya_uart_hybrid.c
+          grep -q 'P3_TX_PIN                20U' app/src/tuya_uart_hybrid.c
+          grep -q 'DT_NODE_HAS_STATUS(DT_NODELABEL(uart1), okay)' app/src/tuya_uart_hybrid.c
+          grep -q 'uart1 { status = "disabled";' app/boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts
+          grep -q 'tx_frames: 0xF113' app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
           grep -q 'P3_UART_INIT_RC 0xF11FU' app/src/main.c
           grep -q 'P3_UART_DEINIT_RC 0xF120U' app/src/main.c
           grep -q 'P3_UART_RESUME_RC 0xF122U' app/src/main.c
@@ -183,7 +199,7 @@ jobs:
           grep -q 'P3_UART_RX_WAIT_MS 0xF127U' app/src/main.c
           grep -q 'P3_STRESS_CYCLES 0xF128U' app/src/main.c
           grep -q 'P3_STRESS_ELAPSED_S 0xF132U' app/src/main.c
-          # v42.0-35: never stop passive RX at 1200 s, but UARTE still sleeps between bursts.
+          # v42.0-36: never stop passive RX at 1200 s, but UARTE still sleeps between bursts.
           grep -q 'while (true)' app/src/main.c
           if grep -q '1200000U' app/src/main.c; then
             echo '::error::Obsolete 1200-second receiver timeout remains'
@@ -211,10 +227,11 @@ jobs:
           grep -q 'P3_RX_NEXT4 0xF13AU' app/src/main.c
           grep -q 'P3_RX_LAST_ERROR 0xF13BU' app/src/main.c
           grep -q 'blind_ctx.diag_last_command = decoded.command' app/src/main.c
-          if grep -q 'uart_poll_out(uart,' app/src/main.c; then echo '::error::Passive RX test must not transmit'; exit 1; fi
-          if grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg"; then echo '::error::Motor command TX must remain disabled'; exit 1; fi
+          if grep -q 'uart_poll_out(' app/src/tuya_uart_hybrid.c; then echo '::error::No blocking Zephyr UART0 TX allowed'; exit 1; fi
+          grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg" || { echo '::error::Zigbee motor TX expected on dedicated UARTE1'; exit 1; }
+          grep -q 'NRF_UARTE0->RXD.PTR' app/src/p3_soft_uart.c
           grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
-          echo "=== v42.0-35 power configuration diagnostics ==="
+          echo "=== v42.0-36 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
           for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
             if ! grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -231,7 +248,8 @@ jobs:
           grep -q 'P3_BUTTON_PRESS_COUNT 0xF119U' app/src/main.c
           grep -q 'P3_BUTTON_LAST_EVENT 0xF11AU' app/src/main.c
           grep -q 'P3_LOCAL_FINISH_TX_DELAY_MS 0xF11EU' app/src/main.c
-          grep -q 'tuya_motor_encode_action(TUYA_MOTOR_STOP' app/src/tuya_uart.c
+          grep -q 'tuya_motor_encode_action(action' app/src/tuya_uart_hybrid.c
+          grep -q 'action == TUYA_MOTOR_STOP' app/src/tuya_uart_hybrid.c
           grep '^CONFIG_USE_DT_CODE_PARTITION=y' "$cfg"
           for opt in P3_MCU_INIT_ENABLE P3_DIAG_STARTUP_QUERIES P3_ZCL_POSITION_INVERT; do
             if grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -249,16 +267,16 @@ jobs:
             fi
           done
           grep -qx '^CONFIG_P3_ZCL_POSITION_ENABLE=y' "$cfg"
-          if grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg"; then echo '::error::TX must be off for one-shot TX test'; exit 1; fi
+          grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg"
           grep -qx '^CONFIG_P3_ZCL_BATTERY_ENABLE=y' "$cfg"
-          if grep -qx '^CONFIG_P3_POSITION_TARGET_ENABLE=y' "$cfg"; then echo '::error::Motor position target must be off'; exit 1; fi
+          grep -qx '^CONFIG_P3_POSITION_TARGET_ENABLE=y' "$cfg"
           grep -q 'tuya_uart_submit_position(percent)' app/src/main.c
           grep -qx '^CONFIG_SETTINGS=y' "$cfg"
           grep -qx '^CONFIG_SETTINGS_NVS=y' "$cfg"
           if grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"; then echo '::error::Calibration must be off'; exit 1; fi
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
           grep -q 'status = "okay";' app/boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts
-          echo "v42.0-35 CONFIG PASS: passive hybrid UARTE RX configured; motor TX disabled."
+          echo "v42.0-36 CONFIG PASS: continuous UARTE0 hybrid RX + independent user-only UARTE1 TX."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -302,42 +320,48 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-35 UNVERIFIED experimental UF2
+      - name: Package P3-NRF52840 v42.0-36 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-35-CONTINUOUS-HYBRID-UNVERIFIED.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-36-CONTROL-HYBRID-BENCH-UNVERIFIED.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-35-CONTINUOUS-HYBRID-UNVERIFIED.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-35-CONTINUOUS-HYBRID-UNVERIFIED.uf2
+            sha256sum P3-NRF52840-v42-0-36-CONTROL-HYBRID-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-36-CONTROL-HYBRID-BENCH-UNVERIFIED.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-35-CONTINUOUS-HYBRID-UNVERIFIED.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-36-CONTROL-HYBRID-BENCH-UNVERIFIED.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-35 HYBRID TIMER3 + UARTE EASYDMA EXPERIMENT
+          P3-NRF52840 v42.0-36 HYBRID TIMER3 + UARTE EASYDMA EXPERIMENT
           UNVERIFIED / NOT FLASH-READY. Experimental code, compilation,
           timing, IRQ ownership, power draw and long-term frame capture
           have not yet been validated on a real HW-954 board.
-          No motor commands are sent; UART TX to motor remains disconnected.
-          Hybrid passive RX: TIMER3 captures first 0x55 while enabling UARTE;
-          UARTE EasyDMA captures subsequent bytes; idle STOPRX powers down RX.
+          Motor UART TX is enabled ONLY for explicit Zigbee cover commands.
+          To test, physically connect HW-954 P0.20 TX -> motor RXD at 3.3V,
+          with motor TXD -> P0.17 and common GND. Never connect power pins.
+          Hybrid RX: TIMER3 captures first 0x55 while enabling UARTE0;
+          UARTE0 EasyDMA captures later bytes; idle STOPRX powers down RX.
+          Independent UARTE1 transmits requested OPEN/CLOSE/STOP/POSITION
+          with EasyDMA then immediately disables TX; no automatic traffic.
           30-second startup delay then continuous passive RX (no 20-minute cut-off).
-          The byte-boundary handoff is UNPROVEN at 9600 baud (about 52us margin).
-          This is a bench experiment, not an actuator-ready firmware.
+          The hybrid RX handoff was measured on v42.0-34 and v42.0-35,
+          but simultaneous TX+RX, idle current and motor replies need testing.
+          This build CAN MOVE THE CURTAIN on Zigbee commands and is BENCH ONLY.
+          First test with the curtain physically clear and STOP available.
           Do not install on the only functioning curtain controller.
           Compare valid frames, rejects, framing errors and current against
           the known baseline v42.0-29 (1.39-1.41mA for RX enabled).
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-35 UNVERIFIED experimental UF2
+      - name: Upload P3-NRF52840 v42.0-36 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-35-CONTINUOUS-HYBRID-UNVERIFIED-UF2
+          name: P3-NRF52840-v42-0-36-CONTROL-HYBRID-BENCH-UNVERIFIED-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
