@@ -7,3 +7,8 @@ int p3_soft_uart_read(uint8_t *byte, k_timeout_t timeout);
 uint32_t p3_soft_uart_framing_errors(void);
 uint32_t p3_soft_uart_overflows(void);
 uint32_t p3_soft_uart_starts(void);
+/* v42.0-34 hybrid software-first-byte / UARTE EasyDMA diagnostics. */
+uint32_t p3_soft_uart_uarte_wakes(void);
+uint32_t p3_soft_uart_dma_bytes(void);
+uint32_t p3_soft_uart_handoff_errors(void);
+uint32_t p3_soft_uart_hardware_errors(void);
