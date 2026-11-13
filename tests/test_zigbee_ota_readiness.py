@@ -24,7 +24,7 @@ class TestOtaReadiness(unittest.TestCase):
         self.assertFalse(report["ota_image_generation_allowed"])
         self.assertTrue(any("slot1_partition" in e for e in report["reasons"]))
         self.assertTrue(any("MCUboot" in e for e in report["reasons"]))
-        self.assertTrue(any("physical HW-954" in e for e in report["reasons"]))
+        self.assertTrue(any("OTA installer" in e for e in report["reasons"]))
 
     def test_flash_mapping_is_preserved(self):
         report = ota.inspect(self.dts, self.conf)
@@ -48,7 +48,7 @@ class TestOtaReadiness(unittest.TestCase):
         conf = self.conf + "\nCONFIG_BOOTLOADER_MCUBOOT=y\nCONFIG_ZIGBEE_FOTA=y\n"
         report = ota.inspect(self.dts, conf)
         self.assertFalse(report["zigbee_ota_ready"])
-        self.assertTrue(any("physical HW-954" in e for e in report["reasons"]))
+        self.assertTrue(any("OTA installer" in e for e in report["reasons"]))
 
 
 if __name__ == "__main__":
