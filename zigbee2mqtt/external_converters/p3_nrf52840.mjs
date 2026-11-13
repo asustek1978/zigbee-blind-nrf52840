@@ -1,4 +1,5 @@
-/* Experimental v42.0-36: continuous hybrid TIMER3/UARTE0 RX +
+/* Experimental v42.0-39: isolate software RX error sources while preserving
+ * v42.0-37 fast Zigbee polling and low-power hybrid TIMER3/UARTE0 RX +
  * independent UARTE1 motor TX only for explicitly requested Zigbee cover
  * open/close/stop/position. NO startup motor traffic or calibration.
  */
@@ -25,6 +26,11 @@ const diagnosticAttributes = {
     rx_first4: 0xF139,
     rx_next4: 0xF13A,
     rx_last_error: 0xF13B,
+    rx_framing_errors: 0xF13C,
+    rx_ring_overflows: 0xF13D,
+    rx_software_starts: 0xF13E,
+    rx_software_nonheader: 0xF13F,
+    uart_last_errorsrc: 0xF140,
     tuya_frames_ok: 0xF133,
     tuya_frames_rejected: 0xF134,
     stress_rx_bytes: 0xF12C,
@@ -36,6 +42,13 @@ const diagnosticAttributes = {
     uart_test_phase: 0xF121,
     diag_last_command: 0xF105,
     diag_last_format: 0xF106,
+};
+const diagnosticDescriptions = {
+    rx_framing_errors: 'GPIO/TIMER3 software UART invalid STOP bit; may include noise/false starts',
+    rx_ring_overflows: 'Bytes dropped because the RX ring buffer was full (software or EasyDMA)',
+    rx_software_starts: 'First-bit sampling attempts by TIMER3; not necessarily valid Tuya frames',
+    rx_software_nonheader: 'Software-decoded bytes other than 0x55; possible partial or noisy traffic',
+    uart_last_errorsrc: 'Last raw nRF UARTE0 ERRORSRC register (0 if no hardware error)',
 };
 const diagnosticFromZigbee = {
     cluster: 'genBasic',
@@ -58,14 +71,15 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v42.0-36 continuous low-power RX and independent Zigbee motor TX (bench)',
+    description: 'P3 nRF52840 v42.0-39 1s Zigbee parent poll and hybrid RX error breakdown (bench)',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee],
     exposes: [
         e.cover_position(), e.battery(),
         ...Object.keys(diagnosticAttributes).map((name) =>
             e.numeric(name, ea.STATE_GET).withDescription(
-                'Read-only diagnostic from Zigbee Basic cluster; first4/next4 are little-endian packed bytes'
+                diagnosticDescriptions[name] ||
+                    'Read-only diagnostic from Zigbee Basic cluster; first4/next4 are little-endian packed bytes'
             )),
     ],
     endpoint: () => ({default: 10}),
