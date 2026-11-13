@@ -85,7 +85,7 @@ int p3_soft_uart_start(void)
     if (!device_is_ready(gpio)) return -ENODEV;
     /* Explicitly disconnect UARTE0 to keep P0.17 under GPIO ownership. */
     nrf_uarte_task_trigger(NRF_UARTE0, NRF_UARTE_TASK_STOPRX);
-    nrf_uarte_enable(NRF_UARTE0, false);
+    nrf_uarte_disable(NRF_UARTE0);
     int rc = gpio_pin_configure(gpio, P3_RX_PIN, GPIO_INPUT | GPIO_PULL_UP);
     if (rc) return rc;
     gpio_init_callback(&rx_callback, rx_start_irq, BIT(P3_RX_PIN));
