@@ -27,7 +27,7 @@ on:
       - experiment/v42-0-27-rx-edge-wakeup
       - experiment/v42-0-28-continuous-uart-rx
       - experiment/v42-0-29-rx-diagnostics
-      - experiment/v42-0-32-gpiote-timer-soft-uart
+      - experiment/v42-0-31-gpiote-timer-soft-uart
       - experiment/v42-0-32-continuous-soft-uart
     paths:
       - '.github/workflows/zigbee-build.yml'
