@@ -189,12 +189,13 @@ jobs:
           grep -q 'src/p3_soft_uart.c' app/CMakeLists.txt
           grep -q 'nrf_timer_event_check' app/src/p3_soft_uart.c
           grep -q 'P3_RX_NEXT_START' app/src/p3_soft_uart.c
-          grep -q 'nrfx_ppi_channel_alloc' app/src/p3_soft_uart.c
-          grep -q 'nrfx_ppi_group_alloc' app/src/p3_soft_uart.c
-          grep -q 'nrfx_ppi_task_addr_group_disable_get' app/src/p3_soft_uart.c
+          grep -q 'nrfx_gppi_conn_alloc' app/src/p3_soft_uart.c
+          grep -q 'nrfx_gppi_group_alloc' app/src/p3_soft_uart.c
+          grep -q 'nrfx_gppi_group_task_dis_addr' app/src/p3_soft_uart.c
+          grep -q 'nrfx_gppi_ep_attach' app/src/p3_soft_uart.c
           grep -q 'p3_rx_gpiote_event_address' app/src/p3_soft_uart.c
           grep -q 'rx_max_isr_lag_us: 0xF12D' app/zigbee2mqtt/external_converters/p3_nrf52840.mjs
-          grep -qx '^CONFIG_NRFX_PPI=y' "$cfg"
+          grep -qx '^CONFIG_NRFX_GPPI=y' "$cfg"
           grep -q 'rx_phase = P3_RX_DATA' app/src/p3_soft_uart.c
           grep -q 'nrf_uarte_disable(NRF_UARTE0)' app/src/p3_soft_uart.c
           grep -q 'P3_RX_HEADER_COUNT 0xF137U' app/src/main.c
