@@ -145,7 +145,7 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Verify v42.0-25 UART driver isolation
+      - name: Verify v42.0-31 GPIO/TIMER RX safety
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
@@ -169,7 +169,7 @@ jobs:
           PY
           cfg=build-nicenano/zephyr/.config
           grep -qx '^CONFIG_PM_DEVICE=y' "$cfg" || { echo '::error::CONFIG_PM_DEVICE is not enabled'; exit 1; }
-          grep -q 'device_init(uart)' app/src/main.c
+          grep -q 'p3_soft_uart_start()' app/src/main.c
           grep -q 'P3_UART_INIT_RC 0xF11FU' app/src/main.c
           grep -q 'P3_UART_DEINIT_RC 0xF120U' app/src/main.c
           grep -q 'P3_UART_RESUME_RC 0xF122U' app/src/main.c
@@ -186,6 +186,7 @@ jobs:
           grep -q 'p3_soft_uart_read(&received' app/src/main.c
           grep -q 'src/p3_soft_uart.c' app/CMakeLists.txt
           grep -q 'nrf_timer_event_check' app/src/p3_soft_uart.c
+          grep -q 'nrf_uarte_disable(NRF_UARTE0)' app/src/p3_soft_uart.c
           grep -q 'P3_RX_HEADER_COUNT 0xF137U' app/src/main.c
           grep -q 'P3_RX_ERROR_COUNT 0xF138U' app/src/main.c
           grep -q 'P3_RX_FIRST4 0xF139U' app/src/main.c
@@ -195,7 +196,7 @@ jobs:
           if grep -q 'uart_poll_out(uart,' app/src/main.c; then echo '::error::Passive RX test must not transmit'; exit 1; fi
           if grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg"; then echo '::error::Motor command TX must remain disabled'; exit 1; fi
           grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
-          echo "=== v42.0-25 power configuration diagnostics ==="
+          echo "=== v42.0-31 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
           for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
             if ! grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -239,7 +240,7 @@ jobs:
           if grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"; then echo '::error::Calibration must be off'; exit 1; fi
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
           grep -q 'status = "okay";' app/boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts
-          echo "v42.0-25 CONFIG PASS: UART0 driver enabled, UART worker excluded, motor command TX disabled; one status query enabled."
+          echo "v42.0-31 CONFIG PASS: passive software UART RX configured; motor TX disabled."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -253,6 +254,14 @@ jobs:
             build-nicenano/zephyr/zephyr.hex
           python3 app/tools/check_uf2_layout.py \
             build-nicenano/zephyr/zephyr.uf2 | tee diagnostic/uf2_report.txt
+
+      - name: Print first compilation errors
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "=== First compiler / linker errors from build.log ==="
+          grep -n -E 'fatal error:|error:|undefined reference|CMake Error|FAILED:|build stopped' build.log | head -n 60 || true
+          echo "=== Tail of build.log ==="
+          tail -n 60 build.log || true
 
       - name: Save diagnostic configuration
         if: always()
@@ -275,21 +284,21 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-25 experimental UF2
+      - name: Package P3-NRF52840 v42.0-31 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-25-RX-Only-ON-DEMAND.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-31-SOFT-UART-UNVERIFIED.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-25-RX-Only-ON-DEMAND.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-25-RX-Only-ON-DEMAND.uf2
+            sha256sum P3-NRF52840-v42-0-31-SOFT-UART-UNVERIFIED.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-31-SOFT-UART-UNVERIFIED.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-25-RX-Only-ON-DEMAND.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-31-SOFT-UART-UNVERIFIED.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
           P3-NRF52840 v42.0-25 RX-ONLY P3 UART observation
           SPARE HW-954 ONLY. Remove loopback jumper before power-on.
@@ -303,11 +312,11 @@ jobs:
           Expect 240 completed windows and 0 PM errors; RX bytes may be 0.
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-25 experimental UF2
+      - name: Upload P3-NRF52840 v42.0-31 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-25-RX-Only-On-Demand-UF2
+          name: P3-NRF52840-v42-0-31-SOFT-UART-UNVERIFIED-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
