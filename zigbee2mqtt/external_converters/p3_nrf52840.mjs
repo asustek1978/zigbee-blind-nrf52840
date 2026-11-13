@@ -1,4 +1,4 @@
-/* Experimental v42.0-29 passive UART diagnostics.
+/* Experimental v42.0-32 passive software UART diagnostics.
  * Never sends UART motor commands. Diagnostic reads use Zigbee Basic cluster.
  */
 import * as fz from 'zigbee-herdsman-converters/converters/fromZigbee';
@@ -43,7 +43,7 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v42.0-29 passive UART RX diagnostics',
+    description: 'P3 nRF52840 v42.0-32 continuous software UART RX diagnostic',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee],
     exposes: [
