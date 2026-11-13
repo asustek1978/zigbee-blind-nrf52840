@@ -122,5 +122,10 @@
     pinctrl-names = "default", "sleep";
 };
 
+/* v42.0-36: UARTE1 direct-register EasyDMA TX on P0.20.
+ * Keep the Zephyr UART1 driver disabled: firmware owns this peripheral.
+ */
+&uart1 { status = "disabled"; };
+
 &timer2 { status = "okay"; };
 &ieee802154 { status = "okay"; };
