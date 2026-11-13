@@ -256,7 +256,10 @@ static void transmit_main(void *a, void *b, void *c)
     p3_tx_pin_idle();
     for (;;) {
         struct p3_tx_msg frame;
-        k_msgq_get(&p3_tx_queue, &frame, K_FOREVER);
+        if (k_msgq_get(&p3_tx_queue, &frame, K_FOREVER) != 0) {
+            /* Queue purge (STOP priority) may wake a waiting consumer. */
+            continue;
+        }
         if (!IS_ENABLED(CONFIG_P3_UART_TX_ENABLE) ||
             !atomic_get(&rx_ready)) {
             continue;
