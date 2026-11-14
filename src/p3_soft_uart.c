@@ -76,6 +76,22 @@ static atomic_t rx_bad_stop_reported_moving;
 static atomic_t rx_bad_stop_motion_unknown;
 static atomic_t rx_last_bad_stop_ms;
 static atomic_t rx_last_bad_stop_byte;
+/* v42.0-41: passive error-path timestamps and reason breakdown only. */
+static atomic_t rx_bad_stop_gpio_last_ms;
+static atomic_t rx_bad_stop_chained_last_ms;
+static atomic_t rx_handoff_unprepared;
+static atomic_t rx_handoff_rxto_timeout;
+static atomic_t rx_handoff_amount_oversize;
+static atomic_t rx_handoff_no_rxstarted;
+static atomic_t rx_handoff_zero_amount;
+static atomic_t rx_handoff_last_ms;
+static atomic_t rx_handoff_last_reason;
+static atomic_t rx_hw_framing_events;
+static atomic_t rx_hw_overrun_events;
+static atomic_t rx_hw_break_events;
+static atomic_t rx_hw_parity_events;
+static atomic_t rx_hw_last_ms;
+static atomic_t rx_hw_last_amount;
 static volatile bool rx_origin_gpio;
 static uint8_t shift_byte;
 static uint8_t bit_index;
@@ -137,6 +153,17 @@ static void p3_uart_warmup(void)
     }
 }
 
+/* Called only on a handoff failure. Reasons 1..5 are mutually exclusive.
+ * No extra operations are added to the successful ~52 us DMA handoff path.
+ */
+static void p3_note_handoff_error(atomic_t *reason_counter, uint32_t reason)
+{
+    atomic_inc(&uart_handoff_errors);
+    atomic_inc(reason_counter);
+    atomic_set(&rx_handoff_last_reason, (atomic_val_t)reason);
+    atomic_set(&rx_handoff_last_ms, (atomic_val_t)k_uptime_get_32());
+}
+
 static void p3_uart_begin_dma(void)
 {
     /* Called at software stop bit centre (9.5 UART bit intervals).
@@ -144,7 +171,7 @@ static void p3_uart_begin_dma(void)
      * is diagnostic; successful byte capture MUST be measured.
      */
     if (!uart_prepared) {
-        atomic_inc(&uart_handoff_errors);
+        p3_note_handoff_error(&rx_handoff_unprepared, 1U);
         return;
     }
     nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_STOP);
@@ -205,11 +232,14 @@ static void timer3_irq(const void *unused)
             /* Error-path-only sampling: classify before the existing
              * resynchronization behavior, leaving the 0x55 handoff fast.
              */
+            const atomic_val_t error_ms = (atomic_val_t)k_uptime_get_32();
             atomic_inc(&framing_errors);
             if (rx_origin_gpio) {
                 atomic_inc(&rx_bad_stop_gpio);
+                atomic_set(&rx_bad_stop_gpio_last_ms, error_ms);
             } else {
                 atomic_inc(&rx_bad_stop_chained);
+                atomic_set(&rx_bad_stop_chained_last_ms, error_ms);
             }
             const atomic_val_t motion = atomic_get(&rx_reported_motion);
             if (motion == 1) {
@@ -220,7 +250,7 @@ static void timer3_irq(const void *unused)
                 atomic_inc(&rx_bad_stop_motion_unknown);
             }
             atomic_set(&rx_last_bad_stop_byte, (atomic_val_t)shift_byte);
-            atomic_set(&rx_last_bad_stop_ms, (atomic_val_t)k_uptime_get_32());
+            atomic_set(&rx_last_bad_stop_ms, error_ms);
         }
         /* No 0x55 preamble: continue software sampling and keep
          * the hardware peripheral completely powered down.
@@ -303,6 +333,16 @@ static void p3_uarte_service(void)
         NRF_UARTE0->ERRORSRC = cause;
         atomic_set(&uart_hw_last_source, (atomic_val_t)cause);
         atomic_inc(&uart_hw_errors);
+        /* Nordic UARTE ERRORSRC: overrun=0x1, parity=0x2,
+         * framing=0x4, break=0x8. A single event may set multiple bits.
+         * This records the already-observed event without extra RX polling.
+         */
+        if (cause & 0x01U) atomic_inc(&rx_hw_overrun_events);
+        if (cause & 0x02U) atomic_inc(&rx_hw_parity_events);
+        if (cause & 0x04U) atomic_inc(&rx_hw_framing_events);
+        if (cause & 0x08U) atomic_inc(&rx_hw_break_events);
+        atomic_set(&rx_hw_last_ms, (atomic_val_t)now);
+        atomic_set(&rx_hw_last_amount, (atomic_val_t)NRF_UARTE0->RXD.AMOUNT);
     }
     const bool buffer_full = NRF_UARTE0->EVENTS_ENDRX != 0U;
     if (!buffer_full &&
@@ -322,7 +362,7 @@ static void p3_uarte_service(void)
         k_busy_wait(10);
     }
     if (!rx_stopped) {
-        atomic_inc(&uart_handoff_errors);
+        p3_note_handoff_error(&rx_handoff_rxto_timeout, 2U);
     } else {
         const uint32_t count = NRF_UARTE0->RXD.AMOUNT;
         if (count > 0U && count <= sizeof(p3_dma_rx)) {
@@ -337,10 +377,17 @@ static void p3_uarte_service(void)
                 k_sem_give(&p3_soft_rx_sem);
             }
         } else if (count > sizeof(p3_dma_rx)) {
-            atomic_inc(&uart_handoff_errors);
+            p3_note_handoff_error(&rx_handoff_amount_oversize, 3U);
         }
         if (NRF_UARTE0->EVENTS_RXSTARTED == 0U || count == 0U) {
-            atomic_inc(&uart_handoff_errors);
+            /* Original code counted only one failure when both are true.
+             * Preserve that count; missing RXSTARTED takes priority.
+             */
+            if (NRF_UARTE0->EVENTS_RXSTARTED == 0U) {
+                p3_note_handoff_error(&rx_handoff_no_rxstarted, 4U);
+            } else {
+                p3_note_handoff_error(&rx_handoff_zero_amount, 5U);
+            }
         }
     }
 
@@ -524,4 +571,66 @@ uint32_t p3_soft_uart_last_bad_stop_ms(void)
 uint32_t p3_soft_uart_last_bad_stop_byte(void)
 {
     return (uint32_t)atomic_get(&rx_last_bad_stop_byte);
+}
+
+/* v42.0-41: volatile, read-only diagnostics. No sampling path changes. */
+uint32_t p3_soft_uart_bad_stop_gpio_last_ms(void)
+{
+    return (uint32_t)atomic_get(&rx_bad_stop_gpio_last_ms);
+}
+uint32_t p3_soft_uart_bad_stop_chained_last_ms(void)
+{
+    return (uint32_t)atomic_get(&rx_bad_stop_chained_last_ms);
+}
+uint32_t p3_soft_uart_handoff_unprepared(void)
+{
+    return (uint32_t)atomic_get(&rx_handoff_unprepared);
+}
+uint32_t p3_soft_uart_handoff_rxto_timeout(void)
+{
+    return (uint32_t)atomic_get(&rx_handoff_rxto_timeout);
+}
+uint32_t p3_soft_uart_handoff_amount_oversize(void)
+{
+    return (uint32_t)atomic_get(&rx_handoff_amount_oversize);
+}
+uint32_t p3_soft_uart_handoff_no_rxstarted(void)
+{
+    return (uint32_t)atomic_get(&rx_handoff_no_rxstarted);
+}
+uint32_t p3_soft_uart_handoff_zero_amount(void)
+{
+    return (uint32_t)atomic_get(&rx_handoff_zero_amount);
+}
+uint32_t p3_soft_uart_handoff_last_ms(void)
+{
+    return (uint32_t)atomic_get(&rx_handoff_last_ms);
+}
+uint32_t p3_soft_uart_handoff_last_reason(void)
+{
+    return (uint32_t)atomic_get(&rx_handoff_last_reason);
+}
+uint32_t p3_soft_uart_hw_framing_events(void)
+{
+    return (uint32_t)atomic_get(&rx_hw_framing_events);
+}
+uint32_t p3_soft_uart_hw_overrun_events(void)
+{
+    return (uint32_t)atomic_get(&rx_hw_overrun_events);
+}
+uint32_t p3_soft_uart_hw_break_events(void)
+{
+    return (uint32_t)atomic_get(&rx_hw_break_events);
+}
+uint32_t p3_soft_uart_hw_parity_events(void)
+{
+    return (uint32_t)atomic_get(&rx_hw_parity_events);
+}
+uint32_t p3_soft_uart_hw_last_ms(void)
+{
+    return (uint32_t)atomic_get(&rx_hw_last_ms);
+}
+uint32_t p3_soft_uart_hw_last_amount(void)
+{
+    return (uint32_t)atomic_get(&rx_hw_last_amount);
 }
