@@ -1,4 +1,4 @@
-/* Experimental v42.0-40: classify software start/STOP failures without changing
+/* Experimental v42.0-41: diagnose software STOP / DMA handoff / UARTE errors without changing
  * v42.0-37 fast Zigbee polling and low-power hybrid TIMER3/UARTE0 RX +
  * independent UARTE1 motor TX only for explicitly requested Zigbee cover
  * open/close/stop/position. NO startup motor traffic or calibration.
@@ -46,6 +46,21 @@ const diagnosticAttributes = {
     rx_gpio_starts_reported_idle: 0xF14B,
     rx_gpio_starts_reported_moving: 0xF14C,
     rx_gpio_starts_motion_unknown: 0xF14D,
+    rx_bad_stop_gpio_last_ms: 0xF14E,
+    rx_bad_stop_chained_last_ms: 0xF14F,
+    rx_handoff_unprepared: 0xF150,
+    rx_handoff_rxto_timeout: 0xF151,
+    rx_handoff_amount_oversize: 0xF152,
+    rx_handoff_no_rxstarted: 0xF153,
+    rx_handoff_zero_amount: 0xF154,
+    rx_handoff_last_ms: 0xF155,
+    rx_handoff_last_reason: 0xF156,
+    rx_hw_framing_events: 0xF157,
+    rx_hw_overrun_events: 0xF158,
+    rx_hw_break_events: 0xF159,
+    rx_hw_parity_events: 0xF15A,
+    rx_hw_last_ms: 0xF15B,
+    rx_hw_last_amount: 0xF15C,
     tuya_frames_ok: 0xF133,
     tuya_frames_rejected: 0xF134,
     stress_rx_bytes: 0xF12C,
@@ -77,6 +92,21 @@ const diagnosticDescriptions = {
     rx_gpio_starts_reported_idle: 'Accepted RX GPIO falling edges while last reported MCU DP1=1 STOP',
     rx_gpio_starts_reported_moving: 'Accepted RX GPIO falling edges while last reported MCU DP1=0/2 OPEN/CLOSE',
     rx_gpio_starts_motion_unknown: 'Accepted RX GPIO falling edges before first validated MCU DP1',
+    rx_bad_stop_gpio_last_ms: 'Last software STOP-bit failure from GPIO start (ms uptime)',
+    rx_bad_stop_chained_last_ms: 'Last software STOP-bit failure in chained byte (ms uptime)',
+    rx_handoff_unprepared: 'DMA handoffs attempted while UARTE0 was not prepared (reason 1)',
+    rx_handoff_rxto_timeout: 'UARTE0 STOPRX waits that timed out (reason 2)',
+    rx_handoff_amount_oversize: 'DMA RXD.AMOUNT values exceeding buffer size (reason 3)',
+    rx_handoff_no_rxstarted: 'DMA handoffs without RXSTARTED (reason 4; takes priority over zero amount)',
+    rx_handoff_zero_amount: 'DMA handoffs with zero bytes but RXSTARTED set (reason 5)',
+    rx_handoff_last_ms: 'Last DMA handoff error timestamp in ms since boot',
+    rx_handoff_last_reason: 'Last DMA handoff reason: 1 not prepared, 2 RXTO timeout, 3 oversize, 4 no RXSTARTED, 5 zero amount',
+    rx_hw_framing_events: 'UARTE ERRORSRC bit 0x4 FRAMING events',
+    rx_hw_overrun_events: 'UARTE ERRORSRC bit 0x1 OVERRUN events',
+    rx_hw_break_events: 'UARTE ERRORSRC bit 0x8 BREAK events',
+    rx_hw_parity_events: 'UARTE ERRORSRC bit 0x2 PARITY events',
+    rx_hw_last_ms: 'Last UARTE0 hardware error timestamp (ms uptime)',
+    rx_hw_last_amount: 'RXD.AMOUNT snapshot at last UARTE0 error event',
 };
 const diagnosticFromZigbee = {
     cluster: 'genBasic',
@@ -112,7 +142,7 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v42.0-40 start/stop-bit/motion diagnostics; 1s Zigbee poll, hybrid low-power RX (bench)',
+    description: 'P3 nRF52840 v42.0-41 UART stop/handoff/hardware diagnostics; 1s poll, low-power RX (bench)',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee, batteryToZigbee],
     exposes: [
