@@ -128,6 +128,22 @@
 #define P3_RX_GPIO_STARTS_REPORTED_IDLE 0xF14BU
 #define P3_RX_GPIO_STARTS_REPORTED_MOVING 0xF14CU
 #define P3_RX_GPIO_STARTS_MOTION_UNKNOWN 0xF14DU
+/* v42.0-41: read-only diagnosis of software, DMA handoff and UARTE faults. */
+#define P3_RX_BAD_STOP_GPIO_LAST_MS 0xF14EU
+#define P3_RX_BAD_STOP_CHAINED_LAST_MS 0xF14FU
+#define P3_RX_HANDOFF_UNPREPARED 0xF150U
+#define P3_RX_HANDOFF_RXTO_TIMEOUT 0xF151U
+#define P3_RX_HANDOFF_AMOUNT_OVERSIZE 0xF152U
+#define P3_RX_HANDOFF_NO_RXSTARTED 0xF153U
+#define P3_RX_HANDOFF_ZERO_AMOUNT 0xF154U
+#define P3_RX_HANDOFF_LAST_MS 0xF155U
+#define P3_RX_HANDOFF_LAST_REASON 0xF156U
+#define P3_RX_HW_FRAMING_EVENTS 0xF157U
+#define P3_RX_HW_OVERRUN_EVENTS 0xF158U
+#define P3_RX_HW_BREAK_EVENTS 0xF159U
+#define P3_RX_HW_PARITY_EVENTS 0xF15AU
+#define P3_RX_HW_LAST_MS 0xF15BU
+#define P3_RX_HW_LAST_AMOUNT 0xF15CU
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -209,6 +225,21 @@ struct blind_device_context {
     zb_uint32_t rx_gpio_starts_reported_idle;
     zb_uint32_t rx_gpio_starts_reported_moving;
     zb_uint32_t rx_gpio_starts_motion_unknown;
+    zb_uint32_t rx_bad_stop_gpio_last_ms;
+    zb_uint32_t rx_bad_stop_chained_last_ms;
+    zb_uint32_t rx_handoff_unprepared;
+    zb_uint32_t rx_handoff_rxto_timeout;
+    zb_uint32_t rx_handoff_amount_oversize;
+    zb_uint32_t rx_handoff_no_rxstarted;
+    zb_uint32_t rx_handoff_zero_amount;
+    zb_uint32_t rx_handoff_last_ms;
+    zb_uint32_t rx_handoff_last_reason;
+    zb_uint32_t rx_hw_framing_events;
+    zb_uint32_t rx_hw_overrun_events;
+    zb_uint32_t rx_hw_break_events;
+    zb_uint32_t rx_hw_parity_events;
+    zb_uint32_t rx_hw_last_ms;
+    zb_uint32_t rx_hw_last_amount;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -236,7 +267,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '0'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '1'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -471,6 +502,21 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_RX_REPORTED_MOTION, &blind_ctx.rx_reported_motion, ZB_
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_GPIO_STARTS_REPORTED_IDLE, &blind_ctx.rx_gpio_starts_reported_idle, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_GPIO_STARTS_REPORTED_MOVING, &blind_ctx.rx_gpio_starts_reported_moving, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_GPIO_STARTS_MOTION_UNKNOWN, &blind_ctx.rx_gpio_starts_motion_unknown, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_BAD_STOP_GPIO_LAST_MS, &blind_ctx.rx_bad_stop_gpio_last_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_BAD_STOP_CHAINED_LAST_MS, &blind_ctx.rx_bad_stop_chained_last_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HANDOFF_UNPREPARED, &blind_ctx.rx_handoff_unprepared, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HANDOFF_RXTO_TIMEOUT, &blind_ctx.rx_handoff_rxto_timeout, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HANDOFF_AMOUNT_OVERSIZE, &blind_ctx.rx_handoff_amount_oversize, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HANDOFF_NO_RXSTARTED, &blind_ctx.rx_handoff_no_rxstarted, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HANDOFF_ZERO_AMOUNT, &blind_ctx.rx_handoff_zero_amount, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HANDOFF_LAST_MS, &blind_ctx.rx_handoff_last_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HANDOFF_LAST_REASON, &blind_ctx.rx_handoff_last_reason, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HW_FRAMING_EVENTS, &blind_ctx.rx_hw_framing_events, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HW_OVERRUN_EVENTS, &blind_ctx.rx_hw_overrun_events, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HW_BREAK_EVENTS, &blind_ctx.rx_hw_break_events, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HW_PARITY_EVENTS, &blind_ctx.rx_hw_parity_events, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HW_LAST_MS, &blind_ctx.rx_hw_last_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HW_LAST_AMOUNT, &blind_ctx.rx_hw_last_amount, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -1160,6 +1206,21 @@ int main(void)
             blind_ctx.rx_gpio_starts_reported_idle = p3_soft_uart_gpio_starts_reported_idle();
             blind_ctx.rx_gpio_starts_reported_moving = p3_soft_uart_gpio_starts_reported_moving();
             blind_ctx.rx_gpio_starts_motion_unknown = p3_soft_uart_gpio_starts_motion_unknown();
+            blind_ctx.rx_bad_stop_gpio_last_ms = p3_soft_uart_bad_stop_gpio_last_ms();
+            blind_ctx.rx_bad_stop_chained_last_ms = p3_soft_uart_bad_stop_chained_last_ms();
+            blind_ctx.rx_handoff_unprepared = p3_soft_uart_handoff_unprepared();
+            blind_ctx.rx_handoff_rxto_timeout = p3_soft_uart_handoff_rxto_timeout();
+            blind_ctx.rx_handoff_amount_oversize = p3_soft_uart_handoff_amount_oversize();
+            blind_ctx.rx_handoff_no_rxstarted = p3_soft_uart_handoff_no_rxstarted();
+            blind_ctx.rx_handoff_zero_amount = p3_soft_uart_handoff_zero_amount();
+            blind_ctx.rx_handoff_last_ms = p3_soft_uart_handoff_last_ms();
+            blind_ctx.rx_handoff_last_reason = p3_soft_uart_handoff_last_reason();
+            blind_ctx.rx_hw_framing_events = p3_soft_uart_hw_framing_events();
+            blind_ctx.rx_hw_overrun_events = p3_soft_uart_hw_overrun_events();
+            blind_ctx.rx_hw_break_events = p3_soft_uart_hw_break_events();
+            blind_ctx.rx_hw_parity_events = p3_soft_uart_hw_parity_events();
+            blind_ctx.rx_hw_last_ms = p3_soft_uart_hw_last_ms();
+            blind_ctx.rx_hw_last_amount = p3_soft_uart_hw_last_amount();
             blind_ctx.rx_error_count = blind_ctx.rx_framing_errors +
                                        blind_ctx.rx_ring_overflows +
                                        p3_soft_uart_hardware_errors() +
