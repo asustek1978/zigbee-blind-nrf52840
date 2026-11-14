@@ -32,3 +32,20 @@ uint32_t p3_soft_uart_bad_stop_reported_moving(void);
 uint32_t p3_soft_uart_bad_stop_motion_unknown(void);
 uint32_t p3_soft_uart_last_bad_stop_ms(void);
 uint32_t p3_soft_uart_last_bad_stop_byte(void);
+
+/* v42.0-41: error-only diagnostics, read on the Zigbee task. */
+uint32_t p3_soft_uart_bad_stop_gpio_last_ms(void);
+uint32_t p3_soft_uart_bad_stop_chained_last_ms(void);
+uint32_t p3_soft_uart_handoff_unprepared(void);
+uint32_t p3_soft_uart_handoff_rxto_timeout(void);
+uint32_t p3_soft_uart_handoff_amount_oversize(void);
+uint32_t p3_soft_uart_handoff_no_rxstarted(void);
+uint32_t p3_soft_uart_handoff_zero_amount(void);
+uint32_t p3_soft_uart_handoff_last_ms(void);
+uint32_t p3_soft_uart_handoff_last_reason(void);
+uint32_t p3_soft_uart_hw_framing_events(void);
+uint32_t p3_soft_uart_hw_overrun_events(void);
+uint32_t p3_soft_uart_hw_break_events(void);
+uint32_t p3_soft_uart_hw_parity_events(void);
+uint32_t p3_soft_uart_hw_last_ms(void);
+uint32_t p3_soft_uart_hw_last_amount(void);
