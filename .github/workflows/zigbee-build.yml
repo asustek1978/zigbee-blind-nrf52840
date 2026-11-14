@@ -127,6 +127,11 @@ jobs:
           PYTHONPATH=app/tools python3 -m unittest discover \
             -s app/tests -p 'test_rx_start_stop_motion.py' -v
 
+      - name: Test v42.0-41 UART hardware/handoff cause diagnostic contract
+        run: |
+          PYTHONPATH=app/tools python3 -m unittest discover \
+            -s app/tests -p 'test_rx_failure_cause_v42_0_41.py' -v
+
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |
           mkdir workspace
@@ -274,7 +279,7 @@ jobs:
           grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg" || { echo '::error::Zigbee motor TX expected on dedicated UARTE1'; exit 1; }
           grep -q 'NRF_UARTE0->RXD.PTR' app/src/p3_soft_uart.c
           grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
-          echo "=== v42.0-40 power configuration diagnostics ==="
+          echo "=== v42.0-41 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
           for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
             if ! grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -363,23 +368,23 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-40 UNVERIFIED experimental UF2
+      - name: Package P3-NRF52840 v42.0-41 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-40-START-STOP-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-41-RX-ERROR-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-40-START-STOP-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-40-START-STOP-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
+            sha256sum P3-NRF52840-v42-0-41-RX-ERROR-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-41-RX-ERROR-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-40-START-STOP-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-41-RX-ERROR-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-40 HYBRID TIMER3 + UARTE EASYDMA EXPERIMENT
+          P3-NRF52840 v42.0-41 HYBRID TIMER3 + UARTE EASYDMA EXPERIMENT
           UNVERIFIED / NOT FLASH-READY. Experimental code, compilation,
           timing, IRQ ownership, power draw and long-term frame capture
           have not yet been validated on a real HW-954 board.
@@ -396,12 +401,16 @@ jobs:
           Commands accepted after Zigbee delivery immediately wake a
           waiting UARTE1 EasyDMA TX worker via Zephyr message queue.
           The user measured 0.03-0.05mA after reboot on v42.0-37;
-          v42.0-40 current MUST be remeasured on the board.
+          v42.0-41 current MUST be remeasured on the board.
           RX error breakdown: framing, overflow, software starts,
           software bytes != 0x55, last Nordic ERRORSRC.
-          v42.0-40 adds source of bad stop bit (GPIO/chained), last
-          MCU DP1 (0 open / 1 stop / 2 close / 3 unknown), counters
-          by last reported state, coarse uptime ms and sampled data byte.
+          v42.0-40 classified invalid software STOP bits by GPIO/chained
+          and last MCU reported motion. The v42.0-41 extension records
+          separate last error times, five mutually exclusive DMA handoff
+          reasons (1 unprepared, 2 RXTO timeout, 3 oversize amount,
+          4 no RXSTARTED, 5 zero amount) and raw UARTE ERRORSRC bit
+          counts (overrun, parity, framing, break) plus time and amount.
+          A UARTE event may set more than one ERRORSRC bit.
           Motion attribution is last MCU reported state, not confirmed
           physical motion. Power must be remeasured against v42.0-37.
           UART hybrid handoff, 15ms idle timeout and Zigbee fast poll
@@ -415,11 +424,11 @@ jobs:
           the known baseline v42.0-29 (1.39-1.41mA for RX enabled).
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-40 UNVERIFIED experimental UF2
+      - name: Upload P3-NRF52840 v42.0-41 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-40-START-STOP-DIAG-LOWPOWER-BENCH-UNVERIFIED-UF2
+          name: P3-NRF52840-v42-0-41-RX-ERROR-DIAG-LOWPOWER-BENCH-UNVERIFIED-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
