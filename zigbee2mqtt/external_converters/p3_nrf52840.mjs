@@ -2,6 +2,8 @@
  * v42.0-37 fast Zigbee polling and low-power hybrid TIMER3/UARTE0 RX +
  * independent UARTE1 motor TX only for explicitly requested Zigbee cover
  * open/close/stop/position. NO startup motor traffic or calibration.
+ * Battery percentage: bridge verified P3 MCU DP13 (0..100) to Zigbee2MQTT
+ * Battery when ZCL PowerConfig remains unknown; no fabricated voltage.
  */
 import * as fz from 'zigbee-herdsman-converters/converters/fromZigbee';
 import * as tz from 'zigbee-herdsman-converters/converters/toZigbee';
@@ -84,6 +86,12 @@ const diagnosticFromZigbee = {
         for (const [name, id] of Object.entries(diagnosticAttributes)) {
             if (msg.data[id] !== undefined) result[name] = msg.data[id];
         }
+        // DP13 is the original P3 MCU's battery estimate in percent.
+        // 0xFF means unknown; never display it as 255% or invent a reading.
+        const battery = msg.data[diagnosticAttributes.motor_dp_battery];
+        if (Number.isInteger(battery) && battery >= 0 && battery <= 100) {
+            result.battery = battery;
+        }
         return result;
     },
 };
@@ -93,13 +101,20 @@ const diagnosticToZigbee = {
         await entity.read('genBasic', [diagnosticAttributes[key]]);
     },
 };
+// Allow the Battery refresh control to read the latest DP13 without firmware changes.
+const batteryToZigbee = {
+    key: ['battery'],
+    convertGet: async (entity) => {
+        await entity.read('genBasic', [diagnosticAttributes.motor_dp_battery]);
+    },
+};
 export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
     description: 'P3 nRF52840 v42.0-40 start/stop-bit/motion diagnostics; 1s Zigbee poll, hybrid low-power RX (bench)',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
-    toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee],
+    toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee, batteryToZigbee],
     exposes: [
         e.cover_position(), e.battery(),
         ...Object.keys(diagnosticAttributes).map((name) =>
@@ -115,5 +130,7 @@ export default {
         await reporting.bind(endpoint, coordinatorEndpoint, ['genPowerCfg', 'closuresWindowCovering']);
         await reporting.batteryPercentageRemaining(endpoint);
         await reporting.currentPositionLiftPercentage(endpoint);
+        // One-time initial snapshot; future refreshes use the Battery GET.
+        await endpoint.read('genBasic', [diagnosticAttributes.motor_dp_battery]);
     },
 };
