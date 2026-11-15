@@ -144,6 +144,15 @@
 #define P3_RX_HW_PARITY_EVENTS 0xF15AU
 #define P3_RX_HW_LAST_MS 0xF15BU
 #define P3_RX_HW_LAST_AMOUNT 0xF15CU
+/* v42.0-42: hardware-UART-during-motion experiment (volatile, read-only). */
+#define P3_HW_DIRECT_ACTIVE 0xF15DU
+#define P3_HW_DIRECT_ENTERS 0xF15EU
+#define P3_HW_DIRECT_EXITS 0xF15FU
+#define P3_HW_DIRECT_BYTES 0xF160U
+#define P3_HW_DIRECT_RESTARTS 0xF161U
+#define P3_HW_DIRECT_MAX_TIMEOUTS 0xF162U
+#define P3_HW_DIRECT_PREARM_TIMEOUTS 0xF163U
+#define P3_HW_DIRECT_LAST_SWITCH_MS 0xF164U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -240,6 +249,14 @@ struct blind_device_context {
     zb_uint32_t rx_hw_parity_events;
     zb_uint32_t rx_hw_last_ms;
     zb_uint32_t rx_hw_last_amount;
+    zb_uint32_t hw_direct_active;
+    zb_uint32_t hw_direct_enters;
+    zb_uint32_t hw_direct_exits;
+    zb_uint32_t hw_direct_bytes;
+    zb_uint32_t hw_direct_restarts;
+    zb_uint32_t hw_direct_max_timeouts;
+    zb_uint32_t hw_direct_prearm_timeouts;
+    zb_uint32_t hw_direct_last_switch_ms;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -267,7 +284,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '1'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '2'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -517,6 +534,14 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HW_BREAK_EVENTS, &blind_ctx.rx_hw_break_events, ZB_
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HW_PARITY_EVENTS, &blind_ctx.rx_hw_parity_events, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HW_LAST_MS, &blind_ctx.rx_hw_last_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_HW_LAST_AMOUNT, &blind_ctx.rx_hw_last_amount, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_ACTIVE, &blind_ctx.hw_direct_active, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_ENTERS, &blind_ctx.hw_direct_enters, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_EXITS, &blind_ctx.hw_direct_exits, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_BYTES, &blind_ctx.hw_direct_bytes, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_RESTARTS, &blind_ctx.hw_direct_restarts, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_MAX_TIMEOUTS, &blind_ctx.hw_direct_max_timeouts, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_PREARM_TIMEOUTS, &blind_ctx.hw_direct_prearm_timeouts, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_LAST_SWITCH_MS, &blind_ctx.hw_direct_last_switch_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -1221,6 +1246,14 @@ int main(void)
             blind_ctx.rx_hw_parity_events = p3_soft_uart_hw_parity_events();
             blind_ctx.rx_hw_last_ms = p3_soft_uart_hw_last_ms();
             blind_ctx.rx_hw_last_amount = p3_soft_uart_hw_last_amount();
+            blind_ctx.hw_direct_active = p3_soft_uart_hw_direct_active();
+            blind_ctx.hw_direct_enters = p3_soft_uart_hw_direct_enters();
+            blind_ctx.hw_direct_exits = p3_soft_uart_hw_direct_exits();
+            blind_ctx.hw_direct_bytes = p3_soft_uart_hw_direct_bytes();
+            blind_ctx.hw_direct_restarts = p3_soft_uart_hw_direct_restarts();
+            blind_ctx.hw_direct_max_timeouts = p3_soft_uart_hw_direct_max_timeouts();
+            blind_ctx.hw_direct_prearm_timeouts = p3_soft_uart_hw_direct_prearm_timeouts();
+            blind_ctx.hw_direct_last_switch_ms = p3_soft_uart_hw_direct_last_switch_ms();
             blind_ctx.rx_error_count = blind_ctx.rx_framing_errors +
                                        blind_ctx.rx_ring_overflows +
                                        p3_soft_uart_hardware_errors() +
