@@ -695,12 +695,16 @@ void p3_soft_uart_request_motor_rx(void)
      * This function is called only by accepted command / changed DP1.
      */
     atomic_set(&hw_direct_motion_lockout, 0);
+    /* Clear any previous STOP BEFORE publishing a new request; otherwise
+     * the RX thread could consume stale stop_ms and drop this command's
+     * intended prearm while the new request is being published.
+     */
+    atomic_clear(&hw_rx_stop_ms);
     if (!atomic_get(&hw_rx_requested)) {
         /* Publish the anchor BEFORE advertising the request to RX thread. */
         atomic_set(&hw_rx_request_ms, (atomic_val_t)k_uptime_get_32());
         atomic_set(&hw_rx_requested, 1);
     }
-    atomic_clear(&hw_rx_stop_ms); /* A new command invalidates old STOP. */
     k_sem_give(&p3_soft_rx_sem);
 }
 
