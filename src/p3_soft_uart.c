@@ -222,8 +222,32 @@ static void p3_hw_rx_maybe_enter(void)
     k_busy_wait(100);
     hw_direct_saw_byte = false;
     uart_last_byte_ms = k_uptime_get_32();
-    atomic_set(&uart_active, 1);
     NRF_UARTE0->TASKS_STARTRX = 1U;
+    /* Do not tell the TX worker "ready" until the peripheral confirms
+     * RXSTARTED. A failed arm must fall back safely to the hybrid listener.
+     */
+    bool started = false;
+    for (uint32_t us = 0U; us < 2000U; us += 20U) {
+        if (NRF_UARTE0->EVENTS_RXSTARTED != 0U) {
+            started = true;
+            break;
+        }
+        k_busy_wait(20);
+    }
+    if (!started) {
+        NRF_UARTE0->EVENTS_RXTO = 0U;
+        NRF_UARTE0->TASKS_STOPRX = 1U;
+        for (uint32_t us = 0U; us < P3_UART_RXTO_WAIT_US; us += 10U) {
+            if (NRF_UARTE0->EVENTS_RXTO != 0U) break;
+            k_busy_wait(10);
+        }
+        p3_uart_disable();
+        atomic_clear(&hw_rx_requested);
+        atomic_clear(&active);
+        (void)gpio_pin_interrupt_configure(gpio, P3_RX_PIN, GPIO_INT_EDGE_FALLING);
+        return;
+    }
+    atomic_set(&uart_active, 1);
     atomic_set(&hw_direct_active, 1);
     atomic_inc(&hw_direct_enters);
     atomic_set(&hw_direct_last_switch_ms, (atomic_val_t)k_uptime_get_32());
