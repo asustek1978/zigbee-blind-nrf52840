@@ -103,6 +103,11 @@ static atomic_t rx_hw_last_amount;
 static atomic_t hw_rx_requested;
 static atomic_t hw_rx_request_ms;
 static atomic_t hw_rx_stop_ms;
+/* v42.0-43: absolute session start never changes on repeated DP1 reports.
+ * A timeout suppresses automatic re-arm until a fresh STOP or Zigbee command.
+ */
+static atomic_t hw_direct_session_start_ms;
+static atomic_t hw_direct_motion_lockout;
 static atomic_t hw_direct_active;
 static atomic_t hw_direct_enters;
 static atomic_t hw_direct_exits;
@@ -186,16 +191,24 @@ static bool p3_hw_rx_wanted(uint32_t now)
     if (!atomic_get(&hw_rx_requested)) {
         return false;
     }
-    const uint32_t request_ms = (uint32_t)atomic_get(&hw_rx_request_ms);
-    if ((uint32_t)(now - request_ms) >= P3_HW_RX_MAX_MS) {
+    /* An ACTIVE direct-RX session has an absolute deadline established
+     * once, after the first verified RXSTARTED. MCU DP1=CLOSE/OPEN repeats
+     * and additional commands never move that deadline.
+     */
+    const bool direct = atomic_get(&hw_direct_active) != 0;
+    const uint32_t anchor_ms = (uint32_t)atomic_get(
+        direct ? &hw_direct_session_start_ms : &hw_rx_request_ms);
+    if ((uint32_t)(now - anchor_ms) >= P3_HW_RX_MAX_MS) {
         if (atomic_cas(&hw_rx_requested, 1, 0)) {
-            atomic_inc(&hw_direct_max_timeouts);
+            if (direct) {
+                atomic_inc(&hw_direct_max_timeouts);
+                atomic_set(&hw_direct_motion_lockout, 1);
+            }
         }
         return false;
     }
     const uint32_t stop_ms = (uint32_t)atomic_get(&hw_rx_stop_ms);
     if (stop_ms != 0U &&
-        (int32_t)(stop_ms - request_ms) >= 0 &&
         (uint32_t)(now - stop_ms) >= P3_HW_RX_STOP_GUARD_MS) {
         atomic_clear(&hw_rx_requested);
         return false;
@@ -250,6 +263,10 @@ static void p3_hw_rx_maybe_enter(void)
         (void)gpio_pin_interrupt_configure(gpio, P3_RX_PIN, GPIO_INT_EDGE_FALLING);
         return;
     }
+    /* The hard watchdog begins at physical RX activation, not at the
+     * last received DP1 report or TX request.
+     */
+    atomic_set(&hw_direct_session_start_ms, (atomic_val_t)k_uptime_get_32());
     atomic_set(&uart_active, 1);
     atomic_set(&hw_direct_active, 1);
     atomic_inc(&hw_direct_enters);
@@ -668,8 +685,15 @@ uint32_t p3_soft_uart_last_hw_errorsrc(void)
  */
 void p3_soft_uart_request_motor_rx(void)
 {
-    atomic_set(&hw_rx_request_ms, (atomic_val_t)k_uptime_get_32());
-    atomic_set(&hw_rx_requested, 1);
+    /* Explicit motor commands can start a new session after a watchdog,
+     * but can NEVER extend an already-active direct hardware session.
+     * This function is called only by accepted command / changed DP1.
+     */
+    atomic_set(&hw_direct_motion_lockout, 0);
+    if (atomic_cas(&hw_rx_requested, 0, 1)) {
+        atomic_set(&hw_rx_request_ms, (atomic_val_t)k_uptime_get_32());
+    }
+    atomic_clear(&hw_rx_stop_ms); /* A new command invalidates old STOP. */
     k_sem_give(&p3_soft_rx_sem);
 }
 
@@ -685,19 +709,28 @@ void p3_soft_uart_note_prearm_timeout(void)
 
 void p3_soft_uart_set_mcu_motion(uint8_t dp1)
 {
-    if (dp1 <= 2U) {
-        atomic_set(&rx_reported_motion, (atomic_val_t)dp1);
-        if (dp1 == 1U) {
-            /* The FIRST fresh STOP after the latest request starts the
-             * 1.5 s release timer. Periodic repeated STOP reports must
-             * not extend the guard indefinitely.
-             */
-            const uint32_t request_ms = (uint32_t)atomic_get(&hw_rx_request_ms);
-            const uint32_t previous_stop = (uint32_t)atomic_get(&hw_rx_stop_ms);
-            if (!atomic_get(&hw_rx_requested) || previous_stop == 0U ||
-                (int32_t)(previous_stop - request_ms) < 0) {
-                atomic_set(&hw_rx_stop_ms, (atomic_val_t)k_uptime_get_32());
-            }
+    if (dp1 > 2U) return;
+    const atomic_val_t previous = atomic_set(&rx_reported_motion, (atomic_val_t)dp1);
+    if (dp1 == 1U) {
+        /* A fresh MCU STOP completes a motion episode and resets
+         * post-timeout automatic-rearm suppression.
+         * Repeated STOP packets cannot prolong the 1.5 s guard.
+         */
+        atomic_clear(&hw_direct_motion_lockout);
+        if (atomic_get(&hw_rx_requested) &&
+            atomic_get(&hw_rx_stop_ms) == 0) {
+            atomic_set(&hw_rx_stop_ms, (atomic_val_t)k_uptime_get_32());
+        }
+        return;
+    }
+    /* Only a genuine DP1 state transition (STOP->OPEN/CLOSE or a
+     * reversal) may initiate direct RX. Identical repeated reports
+     * never change RX request timestamps and never re-arm after timeout.
+     */
+    if (previous != (atomic_val_t)dp1 &&
+        !atomic_get(&hw_direct_motion_lockout)) {
+        if (atomic_get(&hw_rx_requested)) {
+            atomic_clear(&hw_rx_stop_ms);
         } else {
             p3_soft_uart_request_motor_rx();
         }
@@ -830,3 +863,12 @@ uint32_t p3_soft_uart_hw_direct_last_switch_ms(void) { return (uint32_t)atomic_g
 uint32_t p3_soft_uart_hw_direct_hw_errors(void) { return (uint32_t)atomic_get(&hw_direct_hw_errors); }
 uint32_t p3_soft_uart_hw_direct_empty_dma(void) { return (uint32_t)atomic_get(&hw_direct_empty_dma); }
 uint32_t p3_soft_uart_hw_direct_rxto_timeouts(void) { return (uint32_t)atomic_get(&hw_direct_rxto_timeouts); }
+
+uint32_t p3_soft_uart_hw_direct_session_start_ms(void)
+{
+    return (uint32_t)atomic_get(&hw_direct_session_start_ms);
+}
+uint32_t p3_soft_uart_hw_direct_motion_lockout(void)
+{
+    return (uint32_t)atomic_get(&hw_direct_motion_lockout);
+}
