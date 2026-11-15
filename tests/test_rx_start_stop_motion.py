@@ -61,7 +61,7 @@ class TestRxStartStopMotion(unittest.TestCase):
         self.assertIn("tuya_motor_apply_report(frame, &motor_state, &changes)", self.motor)
         self.assertIn("if (accepted && motor_state.motion_valid)", self.motor)
         self.assertIn("p3_soft_uart_set_mcu_motion(reported_motion);", self.motor)
-        self.assertIn("if (dp1 <= 2U)", self.rx)
+        self.assertIn("if (dp1 > 2U) return;", self.rx)
         self.assertIn("rx_reported_motion = ATOMIC_INIT(3)", self.rx)
         self.assertNotIn("p3_soft_uart_set_mcu_motion(", self.main)
 
