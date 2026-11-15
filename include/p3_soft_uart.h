@@ -18,6 +18,12 @@ uint32_t p3_soft_uart_software_nonheader_bytes(void);
 uint32_t p3_soft_uart_last_hw_errorsrc(void);
 
 /* v42.0-40 passive RX classification; DP1 supplied only from MCU reports. */
+/* v42.0-42: request full UARTE0 RX for the next motor movement.
+ * Only the RX owner thread applies the mode switch.
+ */
+void p3_soft_uart_request_motor_rx(void);
+bool p3_soft_uart_direct_rx_active(void);
+void p3_soft_uart_note_prearm_timeout(void);
 void p3_soft_uart_set_mcu_motion(uint8_t dp1);
 uint32_t p3_soft_uart_reported_motion(void);
 uint32_t p3_soft_uart_gpio_start_events(void);
@@ -49,3 +55,13 @@ uint32_t p3_soft_uart_hw_break_events(void);
 uint32_t p3_soft_uart_hw_parity_events(void);
 uint32_t p3_soft_uart_hw_last_ms(void);
 uint32_t p3_soft_uart_hw_last_amount(void);
+
+/* v42.0-42: exposed to Zigbee2MQTT; counters reset on boot. */
+uint32_t p3_soft_uart_hw_direct_active(void);
+uint32_t p3_soft_uart_hw_direct_enters(void);
+uint32_t p3_soft_uart_hw_direct_exits(void);
+uint32_t p3_soft_uart_hw_direct_bytes(void);
+uint32_t p3_soft_uart_hw_direct_restarts(void);
+uint32_t p3_soft_uart_hw_direct_max_timeouts(void);
+uint32_t p3_soft_uart_hw_direct_prearm_timeouts(void);
+uint32_t p3_soft_uart_hw_direct_last_switch_ms(void);
