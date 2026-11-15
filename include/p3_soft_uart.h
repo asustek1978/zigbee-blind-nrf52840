@@ -65,3 +65,6 @@ uint32_t p3_soft_uart_hw_direct_restarts(void);
 uint32_t p3_soft_uart_hw_direct_max_timeouts(void);
 uint32_t p3_soft_uart_hw_direct_prearm_timeouts(void);
 uint32_t p3_soft_uart_hw_direct_last_switch_ms(void);
+uint32_t p3_soft_uart_hw_direct_hw_errors(void);
+uint32_t p3_soft_uart_hw_direct_empty_dma(void);
+uint32_t p3_soft_uart_hw_direct_rxto_timeouts(void);
