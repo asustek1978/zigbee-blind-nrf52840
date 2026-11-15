@@ -17,6 +17,9 @@ FIELDS = {
     "hw_direct_max_timeouts": "F162",
     "hw_direct_prearm_timeouts": "F163",
     "hw_direct_last_switch_ms": "F164",
+    "hw_direct_hw_errors": "F165",
+    "hw_direct_empty_dma": "F166",
+    "hw_direct_rxto_timeouts": "F167",
 }
 
 class TestConditionalHardwareRx(unittest.TestCase):
@@ -62,6 +65,9 @@ class TestConditionalHardwareRx(unittest.TestCase):
         self.assertIn("atomic_inc(&hw_direct_max_timeouts)", self.rx)
         self.assertIn("hw_direct_saw_byte", self.rx)
         self.assertIn("atomic_inc(&hw_direct_restarts)", self.rx)
+        self.assertIn("atomic_inc(&hw_direct_hw_errors)", self.rx)
+        self.assertIn("atomic_inc(&hw_direct_empty_dma)", self.rx)
+        self.assertIn("atomic_inc(&hw_direct_rxto_timeouts)", self.rx)
         self.assertIn("atomic_inc(&hw_direct_exits)", self.rx)
         self.assertIn("tuya_foreach_report_dp(frame, p3_capture_fresh_motion, &fresh_motion)", self.motor)
         self.assertIn("fresh_motion.present", self.motor)
