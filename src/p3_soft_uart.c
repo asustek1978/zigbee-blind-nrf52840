@@ -35,6 +35,11 @@
  * RXDRDY polling every 3 ms can extend this timeout by a few ms.
  */
 #define P3_UART_IDLE_MS 15U
+/* v42.0-42: bounded full UARTE0 RX during commanded or reported motion.
+ * No periodic UARTE polling in battery idle; STOP is a fresh MCU DP1 only.
+ */
+#define P3_HW_RX_STOP_GUARD_MS 1500U
+#define P3_HW_RX_MAX_MS 120000U
 #define P3_UART_RXTO_WAIT_US 10000U
 /* nRF52840 UARTE0: 9600 baud is 0x00275000 (Nordic PS register value). */
 #define P3_UARTE_9600_REGISTER 0x00275000UL
@@ -92,6 +97,21 @@ static atomic_t rx_hw_break_events;
 static atomic_t rx_hw_parity_events;
 static atomic_t rx_hw_last_ms;
 static atomic_t rx_hw_last_amount;
+/* v42.0-42: only the RX owner thread changes UARTE0/TIMER3 hardware.
+ * ZBOSS and UARTE1 TX worker communicate through atomics and the RX semaphore.
+ */
+static atomic_t hw_rx_requested;
+static atomic_t hw_rx_request_ms;
+static atomic_t hw_rx_stop_ms;
+static atomic_t hw_direct_active;
+static atomic_t hw_direct_enters;
+static atomic_t hw_direct_exits;
+static atomic_t hw_direct_bytes;
+static atomic_t hw_direct_restarts;
+static atomic_t hw_direct_max_timeouts;
+static atomic_t hw_direct_prearm_timeouts;
+static atomic_t hw_direct_last_switch_ms;
+static bool hw_direct_saw_byte;
 static volatile bool rx_origin_gpio;
 static uint8_t shift_byte;
 static uint8_t bit_index;
@@ -151,6 +171,62 @@ static void p3_uart_warmup(void)
         NRF_UARTE0->ENABLE = P3_UARTE_ENABLE_REGISTER;
         uart_prepared = true;
     }
+}
+
+/* A fresh accepted Zigbee motor command or MCU DP1=OPEN/CLOSE activates
+ * direct UARTE RX. Release is allowed only after a NEW verified MCU STOP
+ * plus guard, or a hard 120 s power watchdog (recorded separately).
+ * All operations here are atomic; never touch Nordic peripherals elsewhere.
+ */
+static bool p3_hw_rx_wanted(uint32_t now)
+{
+    if (!atomic_get(&hw_rx_requested)) {
+        return false;
+    }
+    const uint32_t request_ms = (uint32_t)atomic_get(&hw_rx_request_ms);
+    if ((uint32_t)(now - request_ms) >= P3_HW_RX_MAX_MS) {
+        if (atomic_cas(&hw_rx_requested, 1, 0)) {
+            atomic_inc(&hw_direct_max_timeouts);
+        }
+        return false;
+    }
+    const uint32_t stop_ms = (uint32_t)atomic_get(&hw_rx_stop_ms);
+    if (stop_ms != 0U &&
+        (int32_t)(stop_ms - request_ms) >= 0 &&
+        (uint32_t)(now - stop_ms) >= P3_HW_RX_STOP_GUARD_MS) {
+        atomic_clear(&hw_rx_requested);
+        return false;
+    }
+    return true;
+}
+
+static void p3_hw_rx_maybe_enter(void)
+{
+    if (atomic_get(&hw_direct_active) || atomic_get(&uart_active) ||
+        !p3_hw_rx_wanted(k_uptime_get_32())) {
+        return;
+    }
+    /* GPIO ISR wins if it already started software sampling. In that case
+     * finish the incoming frame first, then retry the transition.
+     */
+    if (!atomic_cas(&active, 0, 1)) {
+        return;
+    }
+    (void)gpio_pin_interrupt_configure(gpio, P3_RX_PIN, GPIO_INT_DISABLE);
+    nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_STOP);
+    nrf_timer_int_disable(NRF_TIMER3, NRF_TIMER_INT_COMPARE0_MASK);
+    p3_uart_warmup();
+    /* Allow the peripheral to settle before arming raw 9600 baud RX.
+     * This happens in the RX thread, never inside TIMER3 IRQ.
+     */
+    k_busy_wait(100);
+    hw_direct_saw_byte = false;
+    uart_last_byte_ms = k_uptime_get_32();
+    atomic_set(&uart_active, 1);
+    NRF_UARTE0->TASKS_STARTRX = 1U;
+    atomic_set(&hw_direct_active, 1);
+    atomic_inc(&hw_direct_enters);
+    atomic_set(&hw_direct_last_switch_ms, (atomic_val_t)k_uptime_get_32());
 }
 
 /* Called only on a handoff failure. Reasons 1..5 are mutually exclusive.
@@ -323,9 +399,13 @@ static void p3_uarte_service(void)
         return;
     }
     const uint32_t now = k_uptime_get_32();
+    const bool direct = atomic_get(&hw_direct_active) != 0;
     if (NRF_UARTE0->EVENTS_RXDRDY != 0U) {
         NRF_UARTE0->EVENTS_RXDRDY = 0U;
         uart_last_byte_ms = now;
+        if (direct) {
+            hw_direct_saw_byte = true;
+        }
     }
     if (NRF_UARTE0->EVENTS_ERROR != 0U) {
         NRF_UARTE0->EVENTS_ERROR = 0U;
@@ -345,9 +425,18 @@ static void p3_uarte_service(void)
         atomic_set(&rx_hw_last_amount, (atomic_val_t)NRF_UARTE0->RXD.AMOUNT);
     }
     const bool buffer_full = NRF_UARTE0->EVENTS_ENDRX != 0U;
-    if (!buffer_full &&
-        (uint32_t)(now - uart_last_byte_ms) < P3_UART_IDLE_MS) {
-        return;
+    const bool hold_direct = direct && p3_hw_rx_wanted(now);
+    if (!buffer_full) {
+        /* Continuous mode must NOT STOPRX/restart every 15ms in silence.
+         * Flush a received burst after 15ms idle, or exit after STOP.
+         */
+        if (direct && !hw_direct_saw_byte && hold_direct) {
+            return;
+        }
+        if ((!direct || hw_direct_saw_byte) &&
+            (uint32_t)(now - uart_last_byte_ms) < P3_UART_IDLE_MS) {
+            return;
+        }
     }
 
     NRF_UARTE0->EVENTS_RXTO = 0U;
@@ -375,11 +464,15 @@ static void p3_uarte_service(void)
             }
             if (copied > 0U) {
                 k_sem_give(&p3_soft_rx_sem);
+                if (direct) {
+                    atomic_add(&hw_direct_bytes, (atomic_val_t)copied);
+                }
             }
         } else if (count > sizeof(p3_dma_rx)) {
             p3_note_handoff_error(&rx_handoff_amount_oversize, 3U);
         }
-        if (NRF_UARTE0->EVENTS_RXSTARTED == 0U || count == 0U) {
+        if (!direct &&
+            (NRF_UARTE0->EVENTS_RXSTARTED == 0U || count == 0U)) {
             /* Original code counted only one failure when both are true.
              * Preserve that count; missing RXSTARTED takes priority.
              */
@@ -391,6 +484,28 @@ static void p3_uarte_service(void)
         }
     }
 
+    if (direct && rx_stopped && p3_hw_rx_wanted(k_uptime_get_32())) {
+        /* The previous DMA burst is fully stopped and consumed; rearm the
+         * same hardware RX without exposing another software first byte.
+         */
+        NRF_UARTE0->RXD.PTR = (uint32_t)(uintptr_t)p3_dma_rx;
+        NRF_UARTE0->RXD.MAXCNT = sizeof(p3_dma_rx);
+        NRF_UARTE0->EVENTS_RXSTARTED = 0U;
+        NRF_UARTE0->EVENTS_RXDRDY = 0U;
+        NRF_UARTE0->EVENTS_ENDRX = 0U;
+        NRF_UARTE0->EVENTS_RXTO = 0U;
+        NRF_UARTE0->EVENTS_ERROR = 0U;
+        hw_direct_saw_byte = false;
+        uart_last_byte_ms = k_uptime_get_32();
+        NRF_UARTE0->TASKS_STARTRX = 1U;
+        atomic_inc(&hw_direct_restarts);
+        return;
+    }
+    if (direct) {
+        atomic_clear(&hw_direct_active);
+        atomic_inc(&hw_direct_exits);
+        atomic_set(&hw_direct_last_switch_ms, (atomic_val_t)k_uptime_get_32());
+    }
     p3_uart_disable();
     atomic_clear(&uart_active);
     atomic_clear(&active);
@@ -448,6 +563,8 @@ void p3_soft_uart_stop(void)
         }
     }
     p3_uart_disable();
+    atomic_clear(&hw_rx_requested);
+    atomic_clear(&hw_direct_active);
     atomic_clear(&uart_active);
     nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_STOP);
     nrf_timer_int_disable(NRF_TIMER3, NRF_TIMER_INT_COMPARE0_MASK);
@@ -458,6 +575,7 @@ void p3_soft_uart_stop(void)
 int p3_soft_uart_read(uint8_t *byte, k_timeout_t timeout)
 {
     p3_uarte_service();
+    p3_hw_rx_maybe_enter();
     if (ring_buf_get(&p3_soft_ring, byte, 1U) == 1U) {
         return 1;
     }
@@ -468,9 +586,11 @@ int p3_soft_uart_read(uint8_t *byte, k_timeout_t timeout)
                        K_MSEC(3) : timeout;
     if (k_sem_take(&p3_soft_rx_sem, wait) != 0) {
         p3_uarte_service();
+        p3_hw_rx_maybe_enter();
         return (int)ring_buf_get(&p3_soft_ring, byte, 1U);
     }
     p3_uarte_service();
+    p3_hw_rx_maybe_enter();
     return (int)ring_buf_get(&p3_soft_ring, byte, 1U);
 }
 
@@ -514,10 +634,32 @@ uint32_t p3_soft_uart_last_hw_errorsrc(void)
 /* Only accepted DP1 status reports may update classification; do not
  * fabricate a motor state from Zigbee command requests.
  */
+void p3_soft_uart_request_motor_rx(void)
+{
+    atomic_set(&hw_rx_request_ms, (atomic_val_t)k_uptime_get_32());
+    atomic_set(&hw_rx_requested, 1);
+    k_sem_give(&p3_soft_rx_sem);
+}
+
+bool p3_soft_uart_direct_rx_active(void)
+{
+    return atomic_get(&hw_direct_active) != 0;
+}
+
+void p3_soft_uart_note_prearm_timeout(void)
+{
+    atomic_inc(&hw_direct_prearm_timeouts);
+}
+
 void p3_soft_uart_set_mcu_motion(uint8_t dp1)
 {
     if (dp1 <= 2U) {
         atomic_set(&rx_reported_motion, (atomic_val_t)dp1);
+        if (dp1 == 1U) {
+            atomic_set(&hw_rx_stop_ms, (atomic_val_t)k_uptime_get_32());
+        } else {
+            p3_soft_uart_request_motor_rx();
+        }
     }
 }
 uint32_t p3_soft_uart_reported_motion(void)
@@ -634,3 +776,12 @@ uint32_t p3_soft_uart_hw_last_amount(void)
 {
     return (uint32_t)atomic_get(&rx_hw_last_amount);
 }
+/* v42.0-42 bounded hardware-during-motion RX diagnostics. */
+uint32_t p3_soft_uart_hw_direct_active(void) { return (uint32_t)atomic_get(&hw_direct_active); }
+uint32_t p3_soft_uart_hw_direct_enters(void) { return (uint32_t)atomic_get(&hw_direct_enters); }
+uint32_t p3_soft_uart_hw_direct_exits(void) { return (uint32_t)atomic_get(&hw_direct_exits); }
+uint32_t p3_soft_uart_hw_direct_bytes(void) { return (uint32_t)atomic_get(&hw_direct_bytes); }
+uint32_t p3_soft_uart_hw_direct_restarts(void) { return (uint32_t)atomic_get(&hw_direct_restarts); }
+uint32_t p3_soft_uart_hw_direct_max_timeouts(void) { return (uint32_t)atomic_get(&hw_direct_max_timeouts); }
+uint32_t p3_soft_uart_hw_direct_prearm_timeouts(void) { return (uint32_t)atomic_get(&hw_direct_prearm_timeouts); }
+uint32_t p3_soft_uart_hw_direct_last_switch_ms(void) { return (uint32_t)atomic_get(&hw_direct_last_switch_ms); }
