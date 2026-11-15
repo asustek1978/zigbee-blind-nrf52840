@@ -69,6 +69,9 @@ const diagnosticAttributes = {
     hw_direct_max_timeouts: 0xF162,
     hw_direct_prearm_timeouts: 0xF163,
     hw_direct_last_switch_ms: 0xF164,
+    hw_direct_hw_errors: 0xF165,
+    hw_direct_empty_dma: 0xF166,
+    hw_direct_rxto_timeouts: 0xF167,
     tuya_frames_ok: 0xF133,
     tuya_frames_rejected: 0xF134,
     stress_rx_bytes: 0xF12C,
@@ -123,6 +126,9 @@ const diagnosticDescriptions = {
     hw_direct_max_timeouts: 'Hardware RX watchdog exits after 120 seconds without confirmed STOP',
     hw_direct_prearm_timeouts: 'Motor commands sent before hardware RX was ready; RX fallback may apply',
     hw_direct_last_switch_ms: 'Uptime ms of last entry or exit from full hardware RX',
+    hw_direct_hw_errors: 'UARTE0 ERRORSRC events received while full hardware RX mode was active',
+    hw_direct_empty_dma: 'Direct-RX bursts with RXDRDY but zero DMA bytes after STOPRX',
+    hw_direct_rxto_timeouts: 'STOPRX->RXTO timeouts specifically in full hardware RX mode',
 };
 const diagnosticFromZigbee = {
     cluster: 'genBasic',
