@@ -61,7 +61,7 @@ class TestConditionalHardwareRx(unittest.TestCase):
     def test_bounded_hardware_mode_and_fresh_stop(self):
         self.assertIn("#define P3_HW_RX_STOP_GUARD_MS 1500U", self.rx)
         self.assertIn("#define P3_HW_RX_MAX_MS 120000U", self.rx)
-        self.assertIn("(uint32_t)(now - stop_ms) >= P3_HW_RX_STOP_GUARD_MS", self.rx)
+        self.assertIn("p3_hw_rx_stop_guard_due(now, stop_ms, P3_HW_RX_STOP_GUARD_MS)", self.rx)
         self.assertIn("atomic_inc(&hw_direct_max_timeouts)", self.rx)
         self.assertIn("hw_direct_session_start_ms", self.rx)
         self.assertIn("hw_direct_motion_lockout", self.rx)
