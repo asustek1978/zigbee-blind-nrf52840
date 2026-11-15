@@ -52,6 +52,9 @@ do not prove how many bytes/frames, if any, were actually lost.
 | hw_direct_max_timeouts | 0xF162 | 120 s power-watchdog activations |
 | hw_direct_prearm_timeouts | 0xF163 | TX sent before hardware RX ready |
 | hw_direct_last_switch_ms | 0xF164 | Last mode switch uptime, ms |
+| hw_direct_hw_errors | 0xF165 | Hardware ERRORSRC events in direct RX |
+| hw_direct_empty_dma | 0xF166 | Direct RX bursts with RXDRDY but no DMA bytes |
+| hw_direct_rxto_timeouts | 0xF167 | Direct RX STOPRX completion timeouts |
 
 `refresh_all_diagnostics` still reads all attributes in batches; the
 `N/A` value for the refresh action is expected.
