@@ -472,14 +472,19 @@ static void p3_uarte_service(void)
     const bool buffer_full = NRF_UARTE0->EVENTS_ENDRX != 0U;
     const bool hold_direct = direct && p3_hw_rx_wanted(now);
     if (!buffer_full) {
-        /* Continuous mode must NOT STOPRX/restart every 15ms in silence.
-         * Flush a received burst after 15ms idle, or exit after STOP.
+        /* When the full hardware session is still allowed, do not restart
+         * DMA during silence or in the middle of a byte stream. But once
+         * STOP guard / 120-second deadline has expired, MUST exit even if
+         * UART RXDRDY events keep coming: otherwise an active stream could
+         * postpone the watchdog indefinitely.
          */
-        if (direct && !hw_direct_saw_byte && hold_direct) {
-            return;
-        }
-        if ((!direct || hw_direct_saw_byte) &&
-            (uint32_t)(now - uart_last_byte_ms) < P3_UART_IDLE_MS) {
+        if (direct) {
+            if (hold_direct &&
+                (!hw_direct_saw_byte ||
+                 (uint32_t)(now - uart_last_byte_ms) < P3_UART_IDLE_MS)) {
+                return;
+            }
+        } else if ((uint32_t)(now - uart_last_byte_ms) < P3_UART_IDLE_MS) {
             return;
         }
     }
