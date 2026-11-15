@@ -1,4 +1,4 @@
-/* Experimental v42.0-42: full UARTE0 RX during commanded/motor-reported movement,
+/* Experimental v42.0-43: full UARTE0 RX during motor movement; watchdog cannot be renewed,
  * v42.0-37 fast Zigbee polling and low-power hybrid TIMER3/UARTE0 RX +
  * independent UARTE1 motor TX only for explicitly requested Zigbee cover
  * open/close/stop/position. NO startup motor traffic or calibration.
@@ -72,6 +72,8 @@ const diagnosticAttributes = {
     hw_direct_hw_errors: 0xF165,
     hw_direct_empty_dma: 0xF166,
     hw_direct_rxto_timeouts: 0xF167,
+    hw_direct_session_start_ms: 0xF168,
+    hw_direct_motion_lockout: 0xF169,
     tuya_frames_ok: 0xF133,
     tuya_frames_rejected: 0xF134,
     stress_rx_bytes: 0xF12C,
@@ -129,6 +131,8 @@ const diagnosticDescriptions = {
     hw_direct_hw_errors: 'UARTE0 ERRORSRC events received while full hardware RX mode was active',
     hw_direct_empty_dma: 'Direct-RX bursts with RXDRDY but zero DMA bytes after STOPRX',
     hw_direct_rxto_timeouts: 'STOPRX->RXTO timeouts specifically in full hardware RX mode',
+    hw_direct_session_start_ms: 'Uptime ms when the current/last full hardware RX session actually started; absolute 120 s watchdog anchor',
+    hw_direct_motion_lockout: '1=after 120 s watchdog, ignore repeated MCU OPEN/CLOSE until fresh STOP or explicit Zigbee command',
 };
 const diagnosticFromZigbee = {
     cluster: 'genBasic',
@@ -177,7 +181,7 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v42.0-42 conditional hardware RX during motor motion + diagnostic bulk refresh; bench UNVERIFIED',
+    description: 'P3 nRF52840 v42.0-43 fixed 120s UART RX watchdog, motion lockout, bulk refresh; bench UNVERIFIED',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee, refreshAllDiagnosticsToZigbee, batteryToZigbee],
     exposes: [
