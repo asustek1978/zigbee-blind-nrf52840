@@ -131,6 +131,10 @@ jobs:
         run: |
           PYTHONPATH=app/tools python3 -m unittest discover \
             -s app/tests -p 'test_rx_failure_cause_v42_0_41.py' -v
+      - name: Test v42.0-42 full UARTE RX motor mode and bounded timeout
+        run: |
+          PYTHONPATH=app/tools python3 -m unittest discover \
+            -s app/tests -p 'test_rx_hardware_motion_v42_0_42.py' -v
 
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |
@@ -167,7 +171,7 @@ jobs:
             "-DBOARD_ROOT=$GITHUB_WORKSPACE/app" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Verify v42.0-40 GPIO/TIMER RX safety
+      - name: Verify v42.0-42 hybrid idle / UARTE motor RX safety
         if: steps.build.outcome == 'success'
         run: |
           set -euo pipefail
@@ -279,7 +283,7 @@ jobs:
           grep -qx '^CONFIG_P3_UART_TX_ENABLE=y' "$cfg" || { echo '::error::Zigbee motor TX expected on dedicated UARTE1'; exit 1; }
           grep -q 'NRF_UARTE0->RXD.PTR' app/src/p3_soft_uart.c
           grep -q 'P3_UART_TEST_PHASE 0xF121U' app/src/main.c
-          echo "=== v42.0-41 power configuration diagnostics ==="
+          echo "=== v42.0-42 power configuration diagnostics ==="
           grep -E '^(CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG)=|# CONFIG_(ZIGBEE_ROLE_END_DEVICE|PM|TICKLESS_KERNEL|LOG) is not set)' "$cfg" || true
           for opt in ZIGBEE_ROLE_END_DEVICE TICKLESS_KERNEL; do
             if ! grep -qx "CONFIG_${opt}=y" "$cfg"; then
@@ -324,7 +328,7 @@ jobs:
           if grep -qx '^CONFIG_P3_HW_CALIBRATION_ENABLE=y' "$cfg"; then echo '::error::Calibration must be off'; exit 1; fi
           grep -q 'tuya_uart_submit_hw_calibration' app/src/main.c
           grep -q 'status = "okay";' app/boards/others/nicenano_zigbee/nicenano_zigbee_nrf52840.dts
-          echo "v42.0-40 CONFIG PASS: continuous UARTE0 hybrid RX + independent user-only UARTE1 TX."
+          echo "v42.0-42 CONFIG PASS: idle hybrid RX + bounded full UARTE0 during motion; independent UARTE1 TX."
 
       - name: Convert HEX to UF2 and validate flash ranges
         if: steps.build.outcome == 'success'
@@ -368,67 +372,69 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-41 UNVERIFIED experimental UF2
+      - name: Package P3-NRF52840 v42.0-42 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-41-RX-ERROR-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-42-HARDWARE-MOTION-RX-POWER-UNVERIFIED.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-41-RX-ERROR-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-41-RX-ERROR-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
+            sha256sum P3-NRF52840-v42-0-42-HARDWARE-MOTION-RX-POWER-UNVERIFIED.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-42-HARDWARE-MOTION-RX-POWER-UNVERIFIED.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-41-RX-ERROR-DIAG-LOWPOWER-BENCH-UNVERIFIED.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-42-HARDWARE-MOTION-RX-POWER-UNVERIFIED.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-41 HYBRID TIMER3 + UARTE EASYDMA EXPERIMENT
-          UNVERIFIED / NOT FLASH-READY. Experimental code, compilation,
-          timing, IRQ ownership, power draw and long-term frame capture
-          have not yet been validated on a real HW-954 board.
-          Motor UART TX is enabled ONLY for explicit Zigbee cover commands.
-          Wiring already established on user test rig: HW-954 P0.20 TX
-          to motor RXD, motor TXD to P0.17 RX, and common ground.
-          Only use safe 3.3V UART signals; do not rewire while powered.
-          Hybrid RX: TIMER3 captures first 0x55 while enabling UARTE0;
-          UARTE0 EasyDMA captures later bytes; idle STOPRX powers down RX.
-          Independent UARTE1 transmits requested OPEN/CLOSE/STOP/POSITION
-          with EasyDMA then immediately disables TX; no automatic traffic.
-          Hybrid RX now starts immediately at boot (no 30s blackout).
-          Zigbee sleepy parent long poll is now 1000ms instead of 5000ms.
-          Commands accepted after Zigbee delivery immediately wake a
-          waiting UARTE1 EasyDMA TX worker via Zephyr message queue.
-          The user measured 0.03-0.05mA after reboot on v42.0-37;
-          v42.0-41 current MUST be remeasured on the board.
-          RX error breakdown: framing, overflow, software starts,
-          software bytes != 0x55, last Nordic ERRORSRC.
-          v42.0-40 classified invalid software STOP bits by GPIO/chained
-          and last MCU reported motion. The v42.0-41 extension records
-          separate last error times, five mutually exclusive DMA handoff
-          reasons (1 unprepared, 2 RXTO timeout, 3 oversize amount,
-          4 no RXSTARTED, 5 zero amount) and raw UARTE ERRORSRC bit
-          counts (overrun, parity, framing, break) plus time and amount.
-          A UARTE event may set more than one ERRORSRC bit.
-          Motion attribution is last MCU reported state, not confirmed
-          physical motion. Power must be remeasured against v42.0-37.
-          UART hybrid handoff, 15ms idle timeout and Zigbee fast poll
-          are unchanged from v42.0-37; this is diagnostic-only.
-          The hybrid RX handoff was measured on v42.0-34 and v42.0-35,
-          but simultaneous TX+RX, idle current and motor replies need testing.
-          This build CAN MOVE THE CURTAIN on Zigbee commands and is BENCH ONLY.
-          First test with the curtain physically clear and STOP available.
-          Do not install on the only functioning curtain controller.
-          Compare valid frames, rejects, framing errors and current against
-          the known baseline v42.0-29 (1.39-1.41mA for RX enabled).
+          P3-NRF52840 v42.0-42 BOUNDED FULL UARTE RX DURING MOTOR MOTION
+          EXPERIMENTAL / BENCH UNVERIFIED. DO NOT USE ON INSTALLED CURTAINS.
+          Zephyr compilation, Nordic HW-954 timing, real motor safety and
+          current consumption MUST be separately tested on physical hardware.
+          The v42.0-41 diagnostic-only baseline remains available via git.
+
+          Wiring on existing bench: P0.17 receives motor TXD, P0.20 sends
+          UART commands to motor RXD, shared GND, correct 3.3V logic levels.
+          USB or battery wiring must not be changed with power connected.
+          Exactly as before, no startup UART packets, automatic retries or
+          unrequested motor commands; hardware calibration stays disabled.
+          Zigbee long poll remains 1 second. UART1 sends explicit commands.
+
+          New behavior: UARTE0 is pre-armed as hardware RX BEFORE sending
+          a Zigbee motor command (up to 80 ms wait; STOP max 20 ms).
+          If arming misses its bounded deadline TX still proceeds; record
+          hw_direct_prearm_timeouts and check operation manually.
+          Fresh MCU DP1=OPEN/CLOSE also requests hardware mode (physical
+          button starts can be observed after their first valid report).
+          A validated fresh DP1=STOP starts a 1500 ms idle guard; only then
+          RX returns to the proven first-0x55 TIMER3 -> UARTE0 DMA hybrid.
+          No fresh STOP -> after 120000 ms a watchdog releases UARTE0.
+          The watchdog is a power-mode fallback, NOT a motor STOP command.
+
+          Full hardware RX flushes each DMA burst after 15 ms of UART idle;
+          the UART stays enabled across bursts while motion is active.
+          New Z2M diagnostics 0xF15D..0xF164 count hardware RX entries/exits,
+          DMA bytes, restarts, timeouts and last transition timestamp.
+          Zigbee2MQTT also retains one-click refresh_all_diagnostics.
+
+          WARNING: active UARTE0 draws more power than low-power hybrid idle.
+          Measure battery current separately in both states. In direct RX
+          the old software framing counters SHOULD stop increasing, but
+          they may still increase during transition from hybrid mode.
+          No reduction in true lost motor frames has been proven yet.
+          Observe Tuya frames ok/rejected, STOP status, motor temperature,
+          handoff and hardware errors, and Zigbee packet delivery.
+          Test only with motor secured on bench and STOP available.
+          Check UF2 validation, build logs and CI before considering flash.
+          Never install this experimental build on the only working blind.
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-41 UNVERIFIED experimental UF2
+      - name: Upload P3-NRF52840 v42.0-42 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-41-RX-ERROR-DIAG-LOWPOWER-BENCH-UNVERIFIED-UF2
+          name: P3-NRF52840-v42-0-42-HARDWARE-MOTION-RX-POWER-UNVERIFIED-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
