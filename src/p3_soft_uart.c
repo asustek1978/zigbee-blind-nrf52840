@@ -688,7 +688,16 @@ void p3_soft_uart_set_mcu_motion(uint8_t dp1)
     if (dp1 <= 2U) {
         atomic_set(&rx_reported_motion, (atomic_val_t)dp1);
         if (dp1 == 1U) {
-            atomic_set(&hw_rx_stop_ms, (atomic_val_t)k_uptime_get_32());
+            /* The FIRST fresh STOP after the latest request starts the
+             * 1.5 s release timer. Periodic repeated STOP reports must
+             * not extend the guard indefinitely.
+             */
+            const uint32_t request_ms = (uint32_t)atomic_get(&hw_rx_request_ms);
+            const uint32_t previous_stop = (uint32_t)atomic_get(&hw_rx_stop_ms);
+            if (!atomic_get(&hw_rx_requested) || previous_stop == 0U ||
+                (int32_t)(previous_stop - request_ms) < 0) {
+                atomic_set(&hw_rx_stop_ms, (atomic_val_t)k_uptime_get_32());
+            }
         } else {
             p3_soft_uart_request_motor_rx();
         }
