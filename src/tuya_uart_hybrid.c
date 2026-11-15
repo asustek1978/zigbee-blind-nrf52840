@@ -44,7 +44,8 @@ struct p3_tx_msg {
     uint8_t length;
     uint32_t queued_at_ms;
     uint32_t zigbee_at_ms;
-    bool local_finish;
+    bool local_finish; /* v42.0-42: no effect on original motor payload */
+    bool is_stop;
 };
 
 K_MSGQ_DEFINE(p3_tx_queue, sizeof(struct p3_tx_msg), P3_TX_QUEUE_DEPTH, 4);
@@ -77,11 +78,31 @@ void tuya_uart_note_rx_byte(void)
     atomic_inc(&rx_bytes_total);
 }
 
+/* Unlike a cached motor state, an ACTUAL received DP1 identifies a fresh
+ * MCU motion report. Position/battery-only reports must not refresh STOP.
+ */
+struct p3_fresh_motion {
+    bool present;
+    uint8_t value;
+};
+static void p3_capture_fresh_motion(const struct tuya_dp *dp, void *user)
+{
+    struct p3_fresh_motion *motion = user;
+    uint32_t value;
+    if (dp->id == P3_DP_MOTION && dp->type == 0x04U &&
+        dp->length == 1U && tuya_dp_as_uint32(dp, &value) &&
+        value <= 2U) {
+        motion->present = true;
+        motion->value = (uint8_t)value;
+    }
+}
+
 void tuya_uart_accept_report(const struct tuya_frame *frame)
 {
     struct tuya_motor_changes changes = {0};
     bool accepted;
     uint8_t reported_motion = 0xffU;
+    struct p3_fresh_motion fresh_motion = {0};
     if (frame == NULL) {
         return;
     }
@@ -91,10 +112,12 @@ void tuya_uart_accept_report(const struct tuya_frame *frame)
         reported_motion = motor_state.motion; /* actual last MCU DP1 */
     }
     k_mutex_unlock(&p3_state_mutex);
-    /* Classification only: does not issue motor commands, enable RX
-     * hardware or modify timer/UARTE scheduling.
+    /* Only a validated fresh DP1 drives the hardware-mode hold/release.
+     * This is executed by the RX thread AFTER the frame was parsed.
      */
-    if (reported_motion <= 2U) {
+    if (accepted && reported_motion <= 2U &&
+        tuya_foreach_report_dp(frame, p3_capture_fresh_motion, &fresh_motion) &&
+        fresh_motion.present) {
         p3_soft_uart_set_mcu_motion(reported_motion);
     }
 
@@ -170,6 +193,7 @@ static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
 
     memcpy(msg.bytes, bytes, length);
     msg.length = (uint8_t)length;
+    msg.is_stop = is_stop;
     msg.queued_at_ms = k_uptime_get_32();
     msg.zigbee_at_ms = (uint32_t)atomic_set(&pending_zigbee_timestamp, 0);
     /* STOP cancels queued future movement. An already transmitting
@@ -178,8 +202,14 @@ static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
     if (is_stop) {
         k_msgq_purge(&p3_tx_queue);
     }
-    /* Zephyr msgq wakes the blocked worker; no UART/queue poll timer. */
-    return k_msgq_put(&p3_tx_queue, &msg, K_NO_WAIT) == 0;
+    /* If the command was accepted, request hardware listening BEFORE TX.
+     * The TX thread independently waits for the RX owner's ready flag.
+     */
+    const bool accepted = k_msgq_put(&p3_tx_queue, &msg, K_NO_WAIT) == 0;
+    if (accepted) {
+        p3_soft_uart_request_motor_rx();
+    }
+    return accepted;
 }
 
 bool tuya_uart_submit_action(enum tuya_motor_action action)
@@ -279,6 +309,21 @@ static void transmit_main(void *a, void *b, void *c)
         if (!IS_ENABLED(CONFIG_P3_UART_TX_ENABLE) ||
             !atomic_get(&rx_ready)) {
             continue;
+        }
+        /* Wake the RX owner before transmitting. A STOP has a shorter
+         * deadline so a failed/late mode switch cannot delay braking.
+         * On timeout preserve the pre-existing TX behavior and record it.
+         */
+        p3_soft_uart_request_motor_rx();
+        bool hw_ready = p3_soft_uart_direct_rx_active();
+        const uint32_t deadline_ms = frame.is_stop ? 20U : 80U;
+        for (uint32_t waited = 0U; !hw_ready && waited < deadline_ms;
+             waited += 2U) {
+            k_msleep(2);
+            hw_ready = p3_soft_uart_direct_rx_active();
+        }
+        if (!hw_ready) {
+            p3_soft_uart_note_prearm_timeout();
         }
         const uint32_t started = k_uptime_get_32();
         bool completed = p3_transmit_one(&frame);
