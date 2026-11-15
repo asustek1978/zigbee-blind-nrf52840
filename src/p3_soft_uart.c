@@ -111,6 +111,9 @@ static atomic_t hw_direct_restarts;
 static atomic_t hw_direct_max_timeouts;
 static atomic_t hw_direct_prearm_timeouts;
 static atomic_t hw_direct_last_switch_ms;
+static atomic_t hw_direct_hw_errors;
+static atomic_t hw_direct_empty_dma;
+static atomic_t hw_direct_rxto_timeouts;
 static bool hw_direct_saw_byte;
 static volatile bool rx_origin_gpio;
 static uint8_t shift_byte;
@@ -437,6 +440,7 @@ static void p3_uarte_service(void)
         NRF_UARTE0->ERRORSRC = cause;
         atomic_set(&uart_hw_last_source, (atomic_val_t)cause);
         atomic_inc(&uart_hw_errors);
+        if (direct) atomic_inc(&hw_direct_hw_errors);
         /* Nordic UARTE ERRORSRC: overrun=0x1, parity=0x2,
          * framing=0x4, break=0x8. A single event may set multiple bits.
          * This records the already-observed event without extra RX polling.
@@ -476,6 +480,7 @@ static void p3_uarte_service(void)
     }
     if (!rx_stopped) {
         p3_note_handoff_error(&rx_handoff_rxto_timeout, 2U);
+        if (direct) atomic_inc(&hw_direct_rxto_timeouts);
     } else {
         const uint32_t count = NRF_UARTE0->RXD.AMOUNT;
         if (count > 0U && count <= sizeof(p3_dma_rx)) {
@@ -494,6 +499,9 @@ static void p3_uarte_service(void)
             }
         } else if (count > sizeof(p3_dma_rx)) {
             p3_note_handoff_error(&rx_handoff_amount_oversize, 3U);
+        } else if (direct && hw_direct_saw_byte && count == 0U) {
+            /* RXDRDY fired but stopped EasyDMA yielded no bytes. */
+            atomic_inc(&hw_direct_empty_dma);
         }
         if (!direct &&
             (NRF_UARTE0->EVENTS_RXSTARTED == 0U || count == 0U)) {
@@ -809,3 +817,7 @@ uint32_t p3_soft_uart_hw_direct_restarts(void) { return (uint32_t)atomic_get(&hw
 uint32_t p3_soft_uart_hw_direct_max_timeouts(void) { return (uint32_t)atomic_get(&hw_direct_max_timeouts); }
 uint32_t p3_soft_uart_hw_direct_prearm_timeouts(void) { return (uint32_t)atomic_get(&hw_direct_prearm_timeouts); }
 uint32_t p3_soft_uart_hw_direct_last_switch_ms(void) { return (uint32_t)atomic_get(&hw_direct_last_switch_ms); }
+
+uint32_t p3_soft_uart_hw_direct_hw_errors(void) { return (uint32_t)atomic_get(&hw_direct_hw_errors); }
+uint32_t p3_soft_uart_hw_direct_empty_dma(void) { return (uint32_t)atomic_get(&hw_direct_empty_dma); }
+uint32_t p3_soft_uart_hw_direct_rxto_timeouts(void) { return (uint32_t)atomic_get(&hw_direct_rxto_timeouts); }
