@@ -34,7 +34,7 @@ class TestConditionalHardwareRx(unittest.TestCase):
 
     def test_zcl_attributes_and_converter_stay_in_sync(self):
         self.assertEqual(self.js, self.mjs)
-        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '2'}", self.main)
+        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '3'}", self.main)
         for name, attr in FIELDS.items():
             with self.subTest(name=name):
                 macro = "P3_" + name.upper()
@@ -61,8 +61,10 @@ class TestConditionalHardwareRx(unittest.TestCase):
     def test_bounded_hardware_mode_and_fresh_stop(self):
         self.assertIn("#define P3_HW_RX_STOP_GUARD_MS 1500U", self.rx)
         self.assertIn("#define P3_HW_RX_MAX_MS 120000U", self.rx)
-        self.assertIn("(int32_t)(stop_ms - request_ms) >= 0", self.rx)
+        self.assertIn("(uint32_t)(now - stop_ms) >= P3_HW_RX_STOP_GUARD_MS", self.rx)
         self.assertIn("atomic_inc(&hw_direct_max_timeouts)", self.rx)
+        self.assertIn("hw_direct_session_start_ms", self.rx)
+        self.assertIn("hw_direct_motion_lockout", self.rx)
         self.assertIn("hw_direct_saw_byte", self.rx)
         self.assertIn("atomic_inc(&hw_direct_restarts)", self.rx)
         self.assertIn("atomic_inc(&hw_direct_hw_errors)", self.rx)
