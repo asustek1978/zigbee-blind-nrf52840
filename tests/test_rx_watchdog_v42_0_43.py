@@ -27,6 +27,8 @@ class TestHardwareRxWatchdog(unittest.TestCase):
         self.assertIn('if (direct) {\n                atomic_inc(&hw_direct_max_timeouts);', self.src)
         self.assertIn('atomic_set(&hw_direct_motion_lockout, 1);', self.src)
         self.assertIn('p3_hw_rx_stop_guard_due(now, stop_ms, P3_HW_RX_STOP_GUARD_MS)', self.src)
+        self.assertIn('if (hold_direct &&', self.src)
+        self.assertIn('if (direct) {\n            if (hold_direct &&', self.src)
 
     def test_repeated_motion_does_not_extend_requested_time(self):
         motion = self.src.split('void p3_soft_uart_set_mcu_motion(uint8_t dp1)', 1)[1].split(
@@ -41,9 +43,10 @@ class TestHardwareRxWatchdog(unittest.TestCase):
     def test_explicit_commands_not_blocked_by_lockout(self):
         request = self.src.split('void p3_soft_uart_request_motor_rx(void)', 1)[1].split(
             'bool p3_soft_uart_direct_rx_active(void)', 1)[0]
-        self.assertIn('atomic_clear(&hw_direct_motion_lockout);', request)
+        self.assertIn('atomic_set(&hw_direct_motion_lockout, 0);', request)
         self.assertIn('if (!atomic_get(&hw_rx_requested))', request)
         self.assertLess(request.index('atomic_set(&hw_rx_request_ms'), request.index('atomic_set(&hw_rx_requested, 1);'))
+        self.assertLess(request.index('atomic_clear(&hw_rx_stop_ms);'), request.index('atomic_set(&hw_rx_requested, 1);'))
         self.assertIn('atomic_clear(&hw_rx_stop_ms);', request)
         self.assertIn('p3_soft_uart_request_motor_rx();', self.motor)
         self.assertIn('frame.is_stop ? 20U : 80U', self.motor)
