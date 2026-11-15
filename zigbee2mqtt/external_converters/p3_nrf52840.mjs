@@ -1,4 +1,4 @@
-/* Experimental v42.0-41: diagnose software STOP / DMA handoff / UARTE errors without changing
+/* Experimental v42.0-42: full UARTE0 RX during commanded/motor-reported movement,
  * v42.0-37 fast Zigbee polling and low-power hybrid TIMER3/UARTE0 RX +
  * independent UARTE1 motor TX only for explicitly requested Zigbee cover
  * open/close/stop/position. NO startup motor traffic or calibration.
@@ -61,6 +61,14 @@ const diagnosticAttributes = {
     rx_hw_parity_events: 0xF15A,
     rx_hw_last_ms: 0xF15B,
     rx_hw_last_amount: 0xF15C,
+    hw_direct_active: 0xF15D,
+    hw_direct_enters: 0xF15E,
+    hw_direct_exits: 0xF15F,
+    hw_direct_bytes: 0xF160,
+    hw_direct_restarts: 0xF161,
+    hw_direct_max_timeouts: 0xF162,
+    hw_direct_prearm_timeouts: 0xF163,
+    hw_direct_last_switch_ms: 0xF164,
     tuya_frames_ok: 0xF133,
     tuya_frames_rejected: 0xF134,
     stress_rx_bytes: 0xF12C,
@@ -107,6 +115,14 @@ const diagnosticDescriptions = {
     rx_hw_parity_events: 'UARTE ERRORSRC bit 0x2 PARITY events',
     rx_hw_last_ms: 'Last UARTE0 hardware error timestamp (ms uptime)',
     rx_hw_last_amount: 'RXD.AMOUNT snapshot at last UARTE0 error event',
+    hw_direct_active: '1=full hardware UARTE0 receive active; 0=idle hybrid first-byte RX',
+    hw_direct_enters: 'Number of transitions into full hardware RX',
+    hw_direct_exits: 'Number of transitions back to low-power hybrid RX',
+    hw_direct_bytes: 'Bytes received through full hardware UARTE0 mode',
+    hw_direct_restarts: 'DMA burst re-arms while motor hardware RX remained active',
+    hw_direct_max_timeouts: 'Hardware RX watchdog exits after 120 seconds without confirmed STOP',
+    hw_direct_prearm_timeouts: 'Motor commands sent before hardware RX was ready; RX fallback may apply',
+    hw_direct_last_switch_ms: 'Uptime ms of last entry or exit from full hardware RX',
 };
 const diagnosticFromZigbee = {
     cluster: 'genBasic',
@@ -155,7 +171,7 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v42.0-41 UART stop/handoff/hardware diagnostics + bulk refresh; 1s poll, low-power RX (bench)',
+    description: 'P3 nRF52840 v42.0-42 conditional hardware RX during motor motion + diagnostic bulk refresh; bench UNVERIFIED',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee, refreshAllDiagnosticsToZigbee, batteryToZigbee],
     exposes: [
