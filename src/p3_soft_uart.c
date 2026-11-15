@@ -25,6 +25,7 @@
 #include <hal/nrf_gpio.h>
 #include <hal/nrf_uarte.h>
 #include "p3_soft_uart.h"
+#include "p3_uart_watchdog.h"
 
 #define P3_RX_PIN 17U
 #define P3_RING_SIZE 2048U
@@ -198,7 +199,7 @@ static bool p3_hw_rx_wanted(uint32_t now)
     const bool direct = atomic_get(&hw_direct_active) != 0;
     const uint32_t anchor_ms = (uint32_t)atomic_get(
         direct ? &hw_direct_session_start_ms : &hw_rx_request_ms);
-    if ((uint32_t)(now - anchor_ms) >= P3_HW_RX_MAX_MS) {
+    if (p3_hw_rx_timeout_due(now, anchor_ms, P3_HW_RX_MAX_MS)) {
         if (atomic_cas(&hw_rx_requested, 1, 0)) {
             if (direct) {
                 atomic_inc(&hw_direct_max_timeouts);
@@ -208,8 +209,7 @@ static bool p3_hw_rx_wanted(uint32_t now)
         return false;
     }
     const uint32_t stop_ms = (uint32_t)atomic_get(&hw_rx_stop_ms);
-    if (stop_ms != 0U &&
-        (uint32_t)(now - stop_ms) >= P3_HW_RX_STOP_GUARD_MS) {
+    if (p3_hw_rx_stop_guard_due(now, stop_ms, P3_HW_RX_STOP_GUARD_MS)) {
         atomic_clear(&hw_rx_requested);
         return false;
     }
@@ -729,8 +729,8 @@ void p3_soft_uart_set_mcu_motion(uint8_t dp1)
      * reversal) may initiate direct RX. Identical repeated reports
      * never change RX request timestamps and never re-arm after timeout.
      */
-    if (previous != (atomic_val_t)dp1 &&
-        !atomic_get(&hw_direct_motion_lockout)) {
+    if (p3_hw_rx_motion_transition((uint8_t)previous, dp1,
+                                  atomic_get(&hw_direct_motion_lockout) != 0)) {
         if (atomic_get(&hw_rx_requested)) {
             atomic_clear(&hw_rx_stop_ms);
         } else {
