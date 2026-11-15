@@ -68,7 +68,7 @@ class TestRxFailureCauses(unittest.TestCase):
         self.assertIn("atomic_set(&rx_hw_last_ms", error_path)
         self.assertIn("atomic_set(&rx_hw_last_amount", error_path)
 
-    def test_successful_uart_path_and_power_settings_unchanged(self):
+    def test_legacy_uart_first_byte_and_power_settings_preserved(self):
         for invariant in (
             "#define P3_FIRST_SAMPLE_US 156U",
             "#define P3_BIT_US 104U",
@@ -79,7 +79,7 @@ class TestRxFailureCauses(unittest.TestCase):
         ):
             self.assertIn(invariant, self.rx)
         self.assertIn("#define P3_ZIGBEE_POLL_INTERVAL_MS 1000U", self.main)
-        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '1'}", self.main)
+        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '2'}", self.main)
         self.assertIn("result.battery = battery;", self.js)
 
     def test_existing_bad_stop_counters_preserved(self):
