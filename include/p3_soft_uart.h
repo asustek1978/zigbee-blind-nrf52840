@@ -68,3 +68,6 @@ uint32_t p3_soft_uart_hw_direct_last_switch_ms(void);
 uint32_t p3_soft_uart_hw_direct_hw_errors(void);
 uint32_t p3_soft_uart_hw_direct_empty_dma(void);
 uint32_t p3_soft_uart_hw_direct_rxto_timeouts(void);
+/* v42.0-43: absolute watchdog origin and post-timeout MCU re-arm suppression. */
+uint32_t p3_soft_uart_hw_direct_session_start_ms(void);
+uint32_t p3_soft_uart_hw_direct_motion_lockout(void);
