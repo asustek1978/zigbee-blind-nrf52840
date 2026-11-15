@@ -132,6 +132,19 @@ const diagnosticToZigbee = {
     },
 };
 // Allow the Battery refresh control to read the latest DP13 without firmware changes.
+// A single Zigbee2MQTT GET refreshes all firmware diagnostic attributes.
+// Split reads into small ZCL frames to avoid oversized responses; do not send
+// motor commands or reset/modify any diagnostic counters.
+const refreshAllDiagnosticsToZigbee = {
+    key: ['refresh_all_diagnostics'],
+    convertGet: async (entity) => {
+        const attributes = Object.values(diagnosticAttributes);
+        const batchSize = 5;
+        for (let i = 0; i < attributes.length; i += batchSize) {
+            await entity.read('genBasic', attributes.slice(i, i + batchSize));
+        }
+    },
+};
 const batteryToZigbee = {
     key: ['battery'],
     convertGet: async (entity) => {
@@ -142,11 +155,14 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v42.0-41 UART stop/handoff/hardware diagnostics; 1s poll, low-power RX (bench)',
+    description: 'P3 nRF52840 v42.0-41 UART stop/handoff/hardware diagnostics + bulk refresh; 1s poll, low-power RX (bench)',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
-    toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee, batteryToZigbee],
+    toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee, refreshAllDiagnosticsToZigbee, batteryToZigbee],
     exposes: [
         e.cover_position(), e.battery(),
+        e.numeric('refresh_all_diagnostics', ea.STATE_GET).withDescription(
+            'Click refresh to update all diagnostics in small Zigbee Basic read batches; no motor command is sent'
+        ),
         ...Object.keys(diagnosticAttributes).map((name) =>
             e.numeric(name, ea.STATE_GET).withDescription(
                 diagnosticDescriptions[name] ||
