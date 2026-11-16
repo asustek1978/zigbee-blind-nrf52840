@@ -36,6 +36,7 @@ on:
       - experiment/v42-0-39-rx-error-breakdown
       - experiment/v42-0-40-rx-start-stop-motion-diag
       - experiment/v42-0-44-saadc-idle-rx-diag
+      - experiment/v42-0-45-adc-cal-motion-wake
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -152,6 +153,17 @@ jobs:
         run: |
           PYTHONPATH=app/tools python3 -m unittest discover \
             -s app/tests -p 'test_v42_0_44_power_idle_diag.py' -v
+
+      - name: Test v42.0-45 SAADC calibration and position wake source regression
+        run: |
+          PYTHONPATH=app/tools python3 -m unittest discover \
+            -s app/tests -p 'test_v42_0_45_adc_position_wake.py' -v
+
+      - name: Test v42.0-45 fresh physical-movement DP3 state machine on host
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -pedantic -Iapp/include \
+            app/tests/test_p3_position_wake.c -o /tmp/test_p3_position_wake
+          /tmp/test_p3_position_wake
 
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |
@@ -389,23 +401,31 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-44 UNVERIFIED experimental UF2
+      - name: Package P3-NRF52840 v42.0-45 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-44-SAADC-RAILS-IDLE-UART-DIAG-UNVERIFIED.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-45-ADC-CAL-PHYSICAL-MOTION-WAKE-BENCH-UNVERIFIED.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-44-SAADC-RAILS-IDLE-UART-DIAG-UNVERIFIED.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-44-SAADC-RAILS-IDLE-UART-DIAG-UNVERIFIED.uf2
+            sha256sum P3-NRF52840-v42-0-45-ADC-CAL-PHYSICAL-MOTION-WAKE-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-45-ADC-CAL-PHYSICAL-MOTION-WAKE-BENCH-UNVERIFIED.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-44-SAADC-RAILS-IDLE-UART-DIAG-UNVERIFIED.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-45-ADC-CAL-PHYSICAL-MOTION-WAKE-BENCH-UNVERIFIED.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-44 — SAADC RAILS AND IDLE UART FAULT DIAGNOSTICS
+          P3-NRF52840 v42.0-45 — SAADC OFFSET CAL + GUARDED PHYSICAL MOTION RX
+          NEW: explicit VDDH/VDD TACQ=10us; each 10-minute sample uses
+          driver offset calibration + 16x oversampling (not a gain correction).
+          This DOES NOT calibrate VDDH to BAT+: check 4.031V meter vs SAADC.
+          NEW: after watchdog lockout, only a validated changed MCU DP3
+          following >=10 s without changed DP3 can wake full UARTE0.
+          One such physical-position wake allowed per fresh MCU STOP/explicit
+          motor command. Repeated DP1 or DP3 cannot extend 120s session.
+          Check Z2M 0xF175..0xF178. No unrequested motor commands added.
           THESE ARE SUPPLY RAILS, NOT VERIFIED BATTERY VOLTAGE.
           DO NOT LABEL VDDH VOLTAGE AS BAT+ WITHOUT BOARD VERIFICATION.
           EXPERIMENTAL / BENCH ONLY. Hardware validation still required.
@@ -445,11 +465,11 @@ jobs:
           Do not use this build unattended with a curtain attached.
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-44 UNVERIFIED experimental UF2
+      - name: Upload P3-NRF52840 v42.0-45 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-44-SAADC-RAILS-IDLE-UART-DIAG-UNVERIFIED-UF2
+          name: P3-NRF52840-v42-0-45-ADC-CAL-PHYSICAL-MOTION-WAKE-BENCH-UNVERIFIED-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
