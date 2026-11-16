@@ -35,6 +35,7 @@ on:
       - experiment/v42-0-37-zigbee-fast-poll-uart-wake
       - experiment/v42-0-39-rx-error-breakdown
       - experiment/v42-0-40-rx-start-stop-motion-diag
+      - experiment/v42-0-44-saadc-idle-rx-diag
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -146,6 +147,11 @@ jobs:
             app/tests/test_p3_uart_watchdog.c -o /tmp/test_p3_uart_watchdog
           /tmp/test_p3_uart_watchdog
 
+
+      - name: Test v42.0-44 SAADC rail and idle UART source contract
+        run: |
+          PYTHONPATH=app/tools python3 -m unittest discover \
+            -s app/tests -p 'test_v42_0_44_power_idle_diag.py' -v
 
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |
@@ -383,24 +389,32 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-43 UNVERIFIED experimental UF2
+      - name: Package P3-NRF52840 v42.0-44 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-43-HARDWARE-RX-WATCHDOG-FIX-BENCH-UNVERIFIED.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-44-SAADC-RAILS-IDLE-UART-DIAG-UNVERIFIED.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-43-HARDWARE-RX-WATCHDOG-FIX-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-43-HARDWARE-RX-WATCHDOG-FIX-BENCH-UNVERIFIED.uf2
+            sha256sum P3-NRF52840-v42-0-44-SAADC-RAILS-IDLE-UART-DIAG-UNVERIFIED.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-44-SAADC-RAILS-IDLE-UART-DIAG-UNVERIFIED.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-43-HARDWARE-RX-WATCHDOG-FIX-BENCH-UNVERIFIED.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-44-SAADC-RAILS-IDLE-UART-DIAG-UNVERIFIED.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-43 — HARDWARE RX ABSOLUTE WATCHDOG FIX
+          P3-NRF52840 v42.0-44 — SAADC RAILS AND IDLE UART FAULT DIAGNOSTICS
+          THESE ARE SUPPLY RAILS, NOT VERIFIED BATTERY VOLTAGE.
+          DO NOT LABEL VDDH VOLTAGE AS BAT+ WITHOUT BOARD VERIFICATION.
           EXPERIMENTAL / BENCH ONLY. Hardware validation still required.
+          ZCL 0xF16A..F16F: VDDH (mV from internal /5), VDD (mV),
+          valid mask, count, timestamp, last error; sampled at low duty cycle.
+          ZCL 0xF170..F174: software UART bad STOP bursts, faults within
+          30s after exiting direct RX versus others, age from last GPIO edge,
+          last direct RX exit time. Original UART decoding remains unchanged.
+          Existing 120 s non-renewable watchdog / STOP semantics preserved.
 
           FIX from v42.0-42:
           Direct UARTE0 receiver has a HARD 120-second upper bound measured
@@ -431,11 +445,11 @@ jobs:
           Do not use this build unattended with a curtain attached.
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-43 UNVERIFIED experimental UF2
+      - name: Upload P3-NRF52840 v42.0-44 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-43-HARDWARE-RX-WATCHDOG-FIX-BENCH-UNVERIFIED-UF2
+          name: P3-NRF52840-v42-0-44-SAADC-RAILS-IDLE-UART-DIAG-UNVERIFIED-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
