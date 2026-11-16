@@ -79,7 +79,7 @@ class TestRxFailureCauses(unittest.TestCase):
         ):
             self.assertIn(invariant, self.rx)
         self.assertIn("#define P3_ZIGBEE_POLL_INTERVAL_MS 1000U", self.main)
-        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '3'}", self.main)
+        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '4'}", self.main)
         self.assertIn("result.battery = battery;", self.js)
 
     def test_existing_bad_stop_counters_preserved(self):
