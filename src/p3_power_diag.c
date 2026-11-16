@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT
- * v42.0-44 safe diagnostics: low-duty-cycle SAADC of internal VDDH/5, VDD.
+ * v42.0-45 safe diagnostics: low-duty-cycle SAADC of internal VDDH/5, VDD.
  * These are supply rails, not a verified battery tap. Never convert to SOC.
  * ADC configuration uses Zephyr's nRF SAADC driver to avoid ownership races.
  */
@@ -38,6 +38,13 @@ static int sample_rail(const struct adc_dt_spec *channel, uint32_t scale,
     if (rc != 0) return rc;
     seq.buffer = &raw;
     seq.buffer_size = sizeof(raw);
+    /* Nordic SAADC supports offset calibration via the Zephyr ADC API.
+     * One 16x oversampled, offset-calibrated conversion per channel,
+     * sampled only every 10 minutes. Calibration does NOT remove gain
+     * / reference tolerances or prove VDDH is the P3 battery rail.
+     */
+    seq.calibrate = true;
+    seq.oversampling = 4; /* 2^4 = 16 conversions per reading */
     rc = adc_read_dt(channel, &seq);
     if (rc != 0) return rc;
     int32_t mv = raw;
