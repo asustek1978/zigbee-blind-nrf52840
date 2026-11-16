@@ -26,6 +26,7 @@
 #include <hal/nrf_uarte.h>
 #include "p3_soft_uart.h"
 #include "p3_uart_watchdog.h"
+#include "p3_position_wake.h"
 
 #define P3_RX_PIN 17U
 #define P3_RING_SIZE 2048U
@@ -115,6 +116,15 @@ static atomic_t hw_rx_stop_ms;
  */
 static atomic_t hw_direct_session_start_ms;
 static atomic_t hw_direct_motion_lockout;
+/* v42.0-45: one position-confirmed new movement after watchdog may
+ * re-arm full UARTE0 RX. Never re-arm from stale/repeated DP1 alone.
+ * Position detector is updated from validated DP3 on the RX thread.
+ */
+static struct p3_position_wake_state p3_position_wake;
+static atomic_t p3_position_wake_latched;
+static atomic_t p3_position_wake_count;
+static atomic_t p3_position_wake_suppressed;
+static atomic_t p3_position_wake_last_ms;
 static atomic_t hw_direct_active;
 static atomic_t hw_direct_enters;
 static atomic_t hw_direct_exits;
@@ -745,6 +755,42 @@ void p3_soft_uart_note_prearm_timeout(void)
     atomic_inc(&hw_direct_prearm_timeouts);
 }
 
+/* Accepted explicit local/Zigbee motor command starts an independent
+ * motion episode. Called only after the UART TX queue accepts a command.
+ */
+void p3_soft_uart_note_explicit_motor_command(void)
+{
+    atomic_clear(&p3_position_wake_latched);
+}
+
+/* Called only by UART RX thread for a DIFFERENT, valid MCU DP3.
+ * A long quiet interval plus changed DP3 is evidence of a fresh physical
+ * movement. Only one position-induced re-arm is permitted until an MCU
+ * STOP or explicit motor command, even if the first hardware session
+ * reaches its 120s watchdog; repeated DP3 cannot make it run forever.
+ */
+void p3_soft_uart_note_changed_position(uint8_t position)
+{
+    const uint32_t now_ms = k_uptime_get_32();
+    const bool fresh = p3_position_wake_fresh_episode(
+        &p3_position_wake, position, now_ms);
+    atomic_set(&p3_position_wake_last_ms, (atomic_val_t)now_ms);
+
+    if (atomic_get(&hw_direct_motion_lockout) == 0) {
+        return;
+    }
+    if (!fresh || atomic_get(&p3_position_wake_latched) != 0 ||
+        atomic_get(&hw_direct_active) != 0 ||
+        atomic_get(&hw_rx_requested) != 0) {
+        atomic_inc(&p3_position_wake_suppressed);
+        return;
+    }
+    if (atomic_cas(&p3_position_wake_latched, 0, 1)) {
+        atomic_inc(&p3_position_wake_count);
+        p3_soft_uart_request_motor_rx();
+    }
+}
+
 void p3_soft_uart_set_mcu_motion(uint8_t dp1)
 {
     if (dp1 > 2U) return;
@@ -755,6 +801,7 @@ void p3_soft_uart_set_mcu_motion(uint8_t dp1)
          * Repeated STOP packets cannot prolong the 1.5 s guard.
          */
         atomic_clear(&hw_direct_motion_lockout);
+        atomic_clear(&p3_position_wake_latched);
         if (atomic_get(&hw_rx_requested) &&
             atomic_get(&hw_rx_stop_ms) == 0) {
             atomic_set(&hw_rx_stop_ms, (atomic_val_t)k_uptime_get_32());
@@ -916,3 +963,20 @@ uint32_t p3_soft_uart_bad_stop_post_exit_30s(void) { return (uint32_t)atomic_get
 uint32_t p3_soft_uart_bad_stop_late_or_no_exit(void) { return (uint32_t)atomic_get(&rx_bad_stop_late_or_no_exit); }
 uint32_t p3_soft_uart_last_bad_stop_gpio_age_ms(void) { return (uint32_t)atomic_get(&rx_last_bad_stop_gpio_age_ms); }
 uint32_t p3_soft_uart_hw_direct_last_exit_ms(void) { return (uint32_t)atomic_get(&hw_direct_last_exit_ms); }
+
+uint32_t p3_soft_uart_position_wake_count(void)
+{
+    return (uint32_t)atomic_get(&p3_position_wake_count);
+}
+uint32_t p3_soft_uart_position_wake_suppressed(void)
+{
+    return (uint32_t)atomic_get(&p3_position_wake_suppressed);
+}
+uint32_t p3_soft_uart_position_wake_last_ms(void)
+{
+    return (uint32_t)atomic_get(&p3_position_wake_last_ms);
+}
+uint32_t p3_soft_uart_position_wake_latched(void)
+{
+    return (uint32_t)atomic_get(&p3_position_wake_latched);
+}
