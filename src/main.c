@@ -172,6 +172,11 @@
 #define P3_RX_BAD_STOP_LATE_OR_NO_EXIT 0xF172U
 #define P3_RX_LAST_BAD_STOP_GPIO_AGE_MS 0xF173U
 #define P3_HW_DIRECT_LAST_EXIT_MS 0xF174U
+/* v42.0-45: one position-evidenced physical movement wake per STOP/command */
+#define P3_POSITION_WAKE_COUNT 0xF175U
+#define P3_POSITION_WAKE_SUPPRESSED 0xF176U
+#define P3_POSITION_WAKE_LAST_MS 0xF177U
+#define P3_POSITION_WAKE_LATCHED 0xF178U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -292,6 +297,10 @@ struct blind_device_context {
     zb_uint32_t rx_bad_stop_late_or_no_exit;
     zb_uint32_t rx_last_bad_stop_gpio_age_ms;
     zb_uint32_t hw_direct_last_exit_ms;
+    zb_uint32_t position_wake_count;
+    zb_uint32_t position_wake_suppressed;
+    zb_uint32_t position_wake_last_ms;
+    zb_uint32_t position_wake_latched;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -319,7 +328,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '4'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '5'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -593,6 +602,10 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_RX_BAD_STOP_POST_EXIT_30S, &blind_ctx.rx_bad_stop_post
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_BAD_STOP_LATE_OR_NO_EXIT, &blind_ctx.rx_bad_stop_late_or_no_exit, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_RX_LAST_BAD_STOP_GPIO_AGE_MS, &blind_ctx.rx_last_bad_stop_gpio_age_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_LAST_EXIT_MS, &blind_ctx.hw_direct_last_exit_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_POSITION_WAKE_COUNT, &blind_ctx.position_wake_count, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_POSITION_WAKE_SUPPRESSED, &blind_ctx.position_wake_suppressed, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_POSITION_WAKE_LAST_MS, &blind_ctx.position_wake_last_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_POSITION_WAKE_LATCHED, &blind_ctx.position_wake_latched, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -1321,6 +1334,10 @@ int main(void)
             blind_ctx.rx_bad_stop_late_or_no_exit = p3_soft_uart_bad_stop_late_or_no_exit();
             blind_ctx.rx_last_bad_stop_gpio_age_ms = p3_soft_uart_last_bad_stop_gpio_age_ms();
             blind_ctx.hw_direct_last_exit_ms = p3_soft_uart_hw_direct_last_exit_ms();
+            blind_ctx.position_wake_count = p3_soft_uart_position_wake_count();
+            blind_ctx.position_wake_suppressed = p3_soft_uart_position_wake_suppressed();
+            blind_ctx.position_wake_last_ms = p3_soft_uart_position_wake_last_ms();
+            blind_ctx.position_wake_latched = p3_soft_uart_position_wake_latched();
             blind_ctx.rx_error_count = blind_ctx.rx_framing_errors +
                                        blind_ctx.rx_ring_overflows +
                                        p3_soft_uart_hardware_errors() +
