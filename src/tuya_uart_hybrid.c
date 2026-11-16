@@ -120,6 +120,14 @@ void tuya_uart_accept_report(const struct tuya_frame *frame)
         fresh_motion.present) {
         p3_soft_uart_set_mcu_motion(reported_motion);
     }
+    /* A VALID changed MCU DP3 is independent evidence of physical
+     * movement, including after a power watchdog suppressed stale DP1.
+     * apply_report() sets changes.position only for an accepted DP3
+     * different from the last known value. Never wake on repeated reports.
+     */
+    if (accepted && changes.position && motor_state.position_valid) {
+        p3_soft_uart_note_changed_position(motor_state.position);
+    }
 
     k_mutex_lock(&p3_diag_mutex, K_FOREVER);
     p3_diag.valid_frames++;
@@ -207,6 +215,7 @@ static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
      */
     const bool accepted = k_msgq_put(&p3_tx_queue, &msg, K_NO_WAIT) == 0;
     if (accepted) {
+        p3_soft_uart_note_explicit_motor_command();
         p3_soft_uart_request_motor_rx();
     }
     return accepted;
