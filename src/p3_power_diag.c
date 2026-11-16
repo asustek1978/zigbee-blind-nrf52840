@@ -3,6 +3,7 @@
  * These are supply rails, not a verified battery tap. Never convert to SOC.
  * ADC configuration uses Zephyr's nRF SAADC driver to avoid ownership races.
  */
+#include <errno.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/adc.h>
 #include <zephyr/devicetree.h>
