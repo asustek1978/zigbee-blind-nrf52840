@@ -85,6 +85,12 @@ static atomic_t rx_last_bad_stop_byte;
 /* v42.0-41: passive error-path timestamps and reason breakdown only. */
 static atomic_t rx_bad_stop_gpio_last_ms;
 static atomic_t rx_bad_stop_chained_last_ms;
+/* v42.0-44 passive idle-fault classification (error path ONLY). */
+static atomic_t rx_idle_fault_episodes;
+static atomic_t rx_bad_stop_post_exit_30s;
+static atomic_t rx_bad_stop_late_or_no_exit;
+static atomic_t rx_last_bad_stop_gpio_age_ms;
+static atomic_t hw_direct_last_exit_ms;
 static atomic_t rx_handoff_unprepared;
 static atomic_t rx_handoff_rxto_timeout;
 static atomic_t rx_handoff_amount_oversize;
@@ -353,6 +359,26 @@ static void timer3_irq(const void *unused)
              * resynchronization behavior, leaving the 0x55 handoff fast.
              */
             const atomic_val_t error_ms = (atomic_val_t)k_uptime_get_32();
+            /* Group tightly consecutive software STOP-bit errors into
+             * episodes, without changing existing resynchronization.
+             * This runs only on the already-slow error path.
+             */
+            const uint32_t previous_error_ms =
+                (uint32_t)atomic_get(&rx_last_bad_stop_ms);
+            if (previous_error_ms == 0U ||
+                (uint32_t)(error_ms - previous_error_ms) > 250U) {
+                atomic_inc(&rx_idle_fault_episodes);
+            }
+            const uint32_t last_exit_ms =
+                (uint32_t)atomic_get(&hw_direct_last_exit_ms);
+            if (last_exit_ms != 0U &&
+                (uint32_t)(error_ms - last_exit_ms) <= 30000U) {
+                atomic_inc(&rx_bad_stop_post_exit_30s);
+            } else {
+                atomic_inc(&rx_bad_stop_late_or_no_exit);
+            }
+            atomic_set(&rx_last_bad_stop_gpio_age_ms,
+                       error_ms - atomic_get(&rx_last_gpio_start_ms));
             atomic_inc(&framing_errors);
             if (rx_origin_gpio) {
                 atomic_inc(&rx_bad_stop_gpio);
@@ -558,6 +584,7 @@ static void p3_uarte_service(void)
     if (direct) {
         atomic_clear(&hw_direct_active);
         atomic_inc(&hw_direct_exits);
+        atomic_set(&hw_direct_last_exit_ms, (atomic_val_t)k_uptime_get_32());
         atomic_set(&hw_direct_last_switch_ms, (atomic_val_t)k_uptime_get_32());
     }
     p3_uart_disable();
@@ -883,3 +910,9 @@ uint32_t p3_soft_uart_hw_direct_motion_lockout(void)
 {
     return (uint32_t)atomic_get(&hw_direct_motion_lockout);
 }
+
+uint32_t p3_soft_uart_idle_fault_episodes(void) { return (uint32_t)atomic_get(&rx_idle_fault_episodes); }
+uint32_t p3_soft_uart_bad_stop_post_exit_30s(void) { return (uint32_t)atomic_get(&rx_bad_stop_post_exit_30s); }
+uint32_t p3_soft_uart_bad_stop_late_or_no_exit(void) { return (uint32_t)atomic_get(&rx_bad_stop_late_or_no_exit); }
+uint32_t p3_soft_uart_last_bad_stop_gpio_age_ms(void) { return (uint32_t)atomic_get(&rx_last_bad_stop_gpio_age_ms); }
+uint32_t p3_soft_uart_hw_direct_last_exit_ms(void) { return (uint32_t)atomic_get(&hw_direct_last_exit_ms); }
