@@ -21,6 +21,7 @@
 #include "tuya_uart.h"
 #include "tuya_frame.h"
 #include "p3_soft_uart.h"
+#include "p3_power_diag.h"
 
 /* Select HA Window Covering device definition before ZBOSS header import. */
 #define ZB_HA_DEFINE_DEVICE_WINDOW_COVERING
@@ -159,6 +160,18 @@
 /* v42.0-43: non-renewable session anchor and MCU motion report lockout. */
 #define P3_HW_DIRECT_SESSION_START_MS 0xF168U
 #define P3_HW_DIRECT_MOTION_LOCKOUT 0xF169U
+/* v42.0-44: supply rails (NOT verified battery), passive idle RX diagnostics */
+#define P3_SAADC_VDDH_MV 0xF16AU
+#define P3_SAADC_VDD_MV 0xF16BU
+#define P3_SAADC_VALID_MASK 0xF16CU
+#define P3_SAADC_SAMPLES 0xF16DU
+#define P3_SAADC_LAST_MS 0xF16EU
+#define P3_SAADC_LAST_ERROR 0xF16FU
+#define P3_RX_IDLE_FAULT_EPISODES 0xF170U
+#define P3_RX_BAD_STOP_POST_EXIT_30S 0xF171U
+#define P3_RX_BAD_STOP_LATE_OR_NO_EXIT 0xF172U
+#define P3_RX_LAST_BAD_STOP_GPIO_AGE_MS 0xF173U
+#define P3_HW_DIRECT_LAST_EXIT_MS 0xF174U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -268,6 +281,17 @@ struct blind_device_context {
     zb_uint32_t hw_direct_rxto_timeouts;
     zb_uint32_t hw_direct_session_start_ms;
     zb_uint32_t hw_direct_motion_lockout;
+    zb_uint32_t saadc_vddh_mv;
+    zb_uint32_t saadc_vdd_mv;
+    zb_uint32_t saadc_valid_mask;
+    zb_uint32_t saadc_samples;
+    zb_uint32_t saadc_last_ms;
+    zb_uint32_t saadc_last_error;
+    zb_uint32_t rx_idle_fault_episodes;
+    zb_uint32_t rx_bad_stop_post_exit_30s;
+    zb_uint32_t rx_bad_stop_late_or_no_exit;
+    zb_uint32_t rx_last_bad_stop_gpio_age_ms;
+    zb_uint32_t hw_direct_last_exit_ms;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -295,7 +319,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '3'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '4'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -558,6 +582,17 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_EMPTY_DMA, &blind_ctx.hw_direct_empty_dma, Z
 ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_RXTO_TIMEOUTS, &blind_ctx.hw_direct_rxto_timeouts, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_SESSION_START_MS, &blind_ctx.hw_direct_session_start_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_MOTION_LOCKOUT, &blind_ctx.hw_direct_motion_lockout, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SAADC_VDDH_MV, &blind_ctx.saadc_vddh_mv, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SAADC_VDD_MV, &blind_ctx.saadc_vdd_mv, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SAADC_VALID_MASK, &blind_ctx.saadc_valid_mask, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SAADC_SAMPLES, &blind_ctx.saadc_samples, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SAADC_LAST_MS, &blind_ctx.saadc_last_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SAADC_LAST_ERROR, &blind_ctx.saadc_last_error, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_IDLE_FAULT_EPISODES, &blind_ctx.rx_idle_fault_episodes, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_BAD_STOP_POST_EXIT_30S, &blind_ctx.rx_bad_stop_post_exit_30s, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_BAD_STOP_LATE_OR_NO_EXIT, &blind_ctx.rx_bad_stop_late_or_no_exit, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_RX_LAST_BAD_STOP_GPIO_AGE_MS, &blind_ctx.rx_last_bad_stop_gpio_age_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_HW_DIRECT_LAST_EXIT_MS, &blind_ctx.hw_direct_last_exit_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -1275,6 +1310,17 @@ int main(void)
             blind_ctx.hw_direct_rxto_timeouts = p3_soft_uart_hw_direct_rxto_timeouts();
             blind_ctx.hw_direct_session_start_ms = p3_soft_uart_hw_direct_session_start_ms();
             blind_ctx.hw_direct_motion_lockout = p3_soft_uart_hw_direct_motion_lockout();
+            blind_ctx.saadc_vddh_mv = p3_power_diag_vddh_mv();
+            blind_ctx.saadc_vdd_mv = p3_power_diag_vdd_mv();
+            blind_ctx.saadc_valid_mask = p3_power_diag_valid_mask();
+            blind_ctx.saadc_samples = p3_power_diag_samples();
+            blind_ctx.saadc_last_ms = p3_power_diag_last_ms();
+            blind_ctx.saadc_last_error = p3_power_diag_last_error();
+            blind_ctx.rx_idle_fault_episodes = p3_soft_uart_idle_fault_episodes();
+            blind_ctx.rx_bad_stop_post_exit_30s = p3_soft_uart_bad_stop_post_exit_30s();
+            blind_ctx.rx_bad_stop_late_or_no_exit = p3_soft_uart_bad_stop_late_or_no_exit();
+            blind_ctx.rx_last_bad_stop_gpio_age_ms = p3_soft_uart_last_bad_stop_gpio_age_ms();
+            blind_ctx.hw_direct_last_exit_ms = p3_soft_uart_hw_direct_last_exit_ms();
             blind_ctx.rx_error_count = blind_ctx.rx_framing_errors +
                                        blind_ctx.rx_ring_overflows +
                                        p3_soft_uart_hardware_errors() +
