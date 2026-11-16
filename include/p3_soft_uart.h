@@ -71,3 +71,10 @@ uint32_t p3_soft_uart_hw_direct_rxto_timeouts(void);
 /* v42.0-43: absolute watchdog origin and post-timeout MCU re-arm suppression. */
 uint32_t p3_soft_uart_hw_direct_session_start_ms(void);
 uint32_t p3_soft_uart_hw_direct_motion_lockout(void);
+
+/* v42.0-44: passive idle RX fault diagnostics, no timing/path changes. */
+uint32_t p3_soft_uart_idle_fault_episodes(void);
+uint32_t p3_soft_uart_bad_stop_post_exit_30s(void);
+uint32_t p3_soft_uart_bad_stop_late_or_no_exit(void);
+uint32_t p3_soft_uart_last_bad_stop_gpio_age_ms(void);
+uint32_t p3_soft_uart_hw_direct_last_exit_ms(void);
