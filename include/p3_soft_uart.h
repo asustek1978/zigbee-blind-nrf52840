@@ -78,3 +78,11 @@ uint32_t p3_soft_uart_bad_stop_post_exit_30s(void);
 uint32_t p3_soft_uart_bad_stop_late_or_no_exit(void);
 uint32_t p3_soft_uart_last_bad_stop_gpio_age_ms(void);
 uint32_t p3_soft_uart_hw_direct_last_exit_ms(void);
+
+/* v42.0-45: new position-based physical movement after watchdog lockout. */
+void p3_soft_uart_note_changed_position(uint8_t position);
+void p3_soft_uart_note_explicit_motor_command(void);
+uint32_t p3_soft_uart_position_wake_count(void);
+uint32_t p3_soft_uart_position_wake_suppressed(void);
+uint32_t p3_soft_uart_position_wake_last_ms(void);
+uint32_t p3_soft_uart_position_wake_latched(void);
