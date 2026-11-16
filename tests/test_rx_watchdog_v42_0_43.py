@@ -53,7 +53,7 @@ class TestHardwareRxWatchdog(unittest.TestCase):
 
     def test_diagnostics_and_old_contracts_preserved(self):
         self.assertEqual(self.js, self.mjs)
-        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '4'}", self.main)
+        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '5'}", self.main)
         for field, attr in [('hw_direct_session_start_ms', 'F168'), ('hw_direct_motion_lockout', 'F169')]:
             self.assertIn(f"#define P3_{field.upper()} 0x{attr}U", self.main)
             self.assertIn(f"{field}: 0x{attr},", self.js)
