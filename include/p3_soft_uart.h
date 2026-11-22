@@ -5,6 +5,11 @@
 int p3_soft_uart_start(void);
 void p3_soft_uart_stop(void);
 int p3_soft_uart_read(uint8_t *byte, k_timeout_t timeout);
+/* v42.0-48 experimental edge-to-TIMER PPI diagnostics. */
+uint32_t p3_soft_uart_ppi_enabled(void);
+uint32_t p3_soft_uart_ppi_starts(void);
+uint32_t p3_soft_uart_ppi_fallbacks(void);
+uint32_t p3_soft_uart_ppi_late_irqs(void);
 uint32_t p3_soft_uart_framing_errors(void);
 uint32_t p3_soft_uart_overflows(void);
 uint32_t p3_soft_uart_starts(void);
