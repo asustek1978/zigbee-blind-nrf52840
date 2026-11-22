@@ -4,6 +4,7 @@
 
 #include "tuya_motor.h"
 #include "tuya_motor_state.h"
+#include "p3_command_monitor.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -46,6 +47,7 @@ struct tuya_uart_diagnostics {
     uint8_t last_format;
     uint8_t rx_ready;
     uint8_t diag_startup_requests_sent; /* 0..4; full 7-byte UART frames */
+    struct p3_command_monitor command_monitor;
     uint8_t diag_startup_finished;      /* 1 after one-time attempt ends */
 };
 
