@@ -35,7 +35,7 @@ class TestV42046(unittest.TestCase):
 
     def test_zcl_mapping_and_build_id(self):
         self.assertEqual(self.js, self.mjs)
-        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '6'}", self.main)
+        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '7'}", self.main)
         ids = re.findall(r"#define P3_\w+ 0x(F[0-9A-F]{3})U", self.main)
         self.assertEqual(len(ids), len(set(ids)))
         for name, attr in FIELDS.items():

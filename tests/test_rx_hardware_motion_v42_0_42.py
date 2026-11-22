@@ -34,7 +34,7 @@ class TestConditionalHardwareRx(unittest.TestCase):
 
     def test_zcl_attributes_and_converter_stay_in_sync(self):
         self.assertEqual(self.js, self.mjs)
-        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '6'}", self.main)
+        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '7'}", self.main)
         for name, attr in FIELDS.items():
             with self.subTest(name=name):
                 macro = "P3_" + name.upper()

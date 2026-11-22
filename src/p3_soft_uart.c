@@ -320,6 +320,28 @@ static void p3_uart_begin_dma(void)
     NRF_UARTE0->TASKS_STARTRX = 1U;
 }
 
+/* v42.0-47: abort only the malformed software STOP-bit path. GPIO's
+ * falling-edge interrupt remains configured throughout software reception;
+ * rx_start_irq rejects edges while active=1. After an invalid STOP bit we
+ * must relinquish the TIMER3 sampler rather than chaining speculative bytes.
+ * No UARTE RX DMA is started and no polling is added to battery idle.
+ * If RX is still LOW, a future HIGH->LOW edge can re-enter via GPIO.
+ */
+static void p3_soft_uart_abort_bad_stop(void)
+{
+    nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_STOP);
+    nrf_timer_int_disable(NRF_TIMER3, NRF_TIMER_INT_COMPARE0_MASK);
+    nrf_timer_event_clear(NRF_TIMER3, NRF_TIMER_EVENT_COMPARE0);
+    if (uart_prepared) {
+        p3_uart_disable();
+    }
+    rx_phase = P3_RX_DATA;
+    shift_byte = 0U;
+    bit_index = 0U;
+    /* Clear ownership LAST so a fresh GPIO edge cannot race our reset. */
+    atomic_clear(&active);
+}
+
 static void timer3_irq(const void *unused)
 {
     ARG_UNUSED(unused);
@@ -407,6 +429,9 @@ static void timer3_irq(const void *unused)
             }
             atomic_set(&rx_last_bad_stop_byte, (atomic_val_t)shift_byte);
             atomic_set(&rx_last_bad_stop_ms, error_ms);
+            /* v42.0-47: do not chain after an invalid STOP bit. */
+            p3_soft_uart_abort_bad_stop();
+            return;
         }
         /* No 0x55 preamble: continue software sampling and keep
          * the hardware peripheral completely powered down.

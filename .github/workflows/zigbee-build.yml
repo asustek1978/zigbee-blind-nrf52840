@@ -38,6 +38,7 @@ on:
       - experiment/v42-0-44-saadc-idle-rx-diag
       - experiment/v42-0-45-adc-cal-motion-wake
       - experiment/v42-0-46-command-outcome-monitor
+      - experiment/v42-0-47-bad-stop-gpio-recovery
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -176,6 +177,11 @@ jobs:
           gcc -std=c11 -Wall -Wextra -Werror -pedantic -Iapp/include \
             app/tests/test_p3_command_monitor.c -o /tmp/test_p3_command_monitor
           /tmp/test_p3_command_monitor
+
+      - name: Test v42.0-47 invalid STOP recovery contract
+        run: |
+          PYTHONPATH=app/tools python3 -m unittest discover \
+            -s app/tests -p 'test_v42_0_47_bad_stop_recovery.py' -v
 
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |
@@ -413,23 +419,32 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-46 UNVERIFIED experimental UF2
+      - name: Package P3-NRF52840 v42.0-47 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-46-PASSIVE-COMMAND-OUTCOME-BENCH-UNVERIFIED.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-47-BAD-STOP-GPIO-RECOVERY-BENCH-UNVERIFIED.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-46-PASSIVE-COMMAND-OUTCOME-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-46-PASSIVE-COMMAND-OUTCOME-BENCH-UNVERIFIED.uf2
+            sha256sum P3-NRF52840-v42-0-47-BAD-STOP-GPIO-RECOVERY-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-47-BAD-STOP-GPIO-RECOVERY-BENCH-UNVERIFIED.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-46-PASSIVE-COMMAND-OUTCOME-BENCH-UNVERIFIED.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-47-BAD-STOP-GPIO-RECOVERY-BENCH-UNVERIFIED.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-46 — PASSIVE PER-COMMAND OUTCOME TELEMETRY
+          P3-NRF52840 v42.0-47 — INVALID SOFTWARE STOP RECOVERY
+          On an invalid STOP bit in low-power GPIO/TIMER3 mode,
+          terminate the speculative software-byte chain, stop TIMER3,
+          disable UARTE0 warmup if needed, reset bit decoder and
+          resume GPIO falling-edge capture. Valid nonheader chaining
+          and 0x55 -> UARTE0 DMA handoff remain unchanged.
+          No new hardware RX hold, retry, wake polling or motor commands.
+          Tested by static source contract and CI build only;
+          physical current and edge timing still need bench checks.
+          v42.0-46 command outcome counters and protocols are retained.
           0xF179..0xF186: accepted TX, MCU report after TX, target reported,
           STOP reported, timeout without MCU report / without target,
           superseded by newer TX, and last status. This is telemetry,
@@ -486,11 +501,11 @@ jobs:
           Do not use this build unattended with a curtain attached.
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-46 UNVERIFIED experimental UF2
+      - name: Upload P3-NRF52840 v42.0-47 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: P3-NRF52840-v42-0-46-PASSIVE-COMMAND-OUTCOME-BENCH-UNVERIFIED-UF2
+          name: P3-NRF52840-v42-0-47-BAD-STOP-GPIO-RECOVERY-BENCH-UNVERIFIED-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
