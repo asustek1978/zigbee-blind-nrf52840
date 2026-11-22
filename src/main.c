@@ -177,6 +177,21 @@
 #define P3_POSITION_WAKE_SUPPRESSED 0xF176U
 #define P3_POSITION_WAKE_LAST_MS 0xF177U
 #define P3_POSITION_WAKE_LATCHED 0xF178U
+/* v42.0-46: passive per-command outcome counters; NEVER motor acknowledgements. */
+#define P3_CMD_QUEUED 0xF179U
+#define P3_CMD_TX_OK 0xF17AU
+#define P3_CMD_TX_FAILED 0xF17BU
+#define P3_CMD_MCU_REPORT 0xF17CU
+#define P3_CMD_POSITION_REPORTED 0xF17DU
+#define P3_CMD_STOP_REPORTED 0xF17EU
+#define P3_CMD_TIMEOUT_NO_REPORT 0xF17FU
+#define P3_CMD_TIMEOUT_NO_TARGET 0xF180U
+#define P3_CMD_SUPERSEDED 0xF181U
+#define P3_CMD_PENDING 0xF182U
+#define P3_CMD_LAST_KIND 0xF183U
+#define P3_CMD_LAST_TARGET 0xF184U
+#define P3_CMD_LAST_RESULT 0xF185U
+#define P3_CMD_LAST_REPORT_DELAY_MS 0xF186U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -301,6 +316,20 @@ struct blind_device_context {
     zb_uint32_t position_wake_suppressed;
     zb_uint32_t position_wake_last_ms;
     zb_uint32_t position_wake_latched;
+    zb_uint32_t cmd_queued;
+    zb_uint32_t cmd_tx_ok;
+    zb_uint32_t cmd_tx_failed;
+    zb_uint32_t cmd_mcu_report;
+    zb_uint32_t cmd_position_reported;
+    zb_uint32_t cmd_stop_reported;
+    zb_uint32_t cmd_timeout_no_report;
+    zb_uint32_t cmd_timeout_no_target;
+    zb_uint32_t cmd_superseded;
+    zb_uint32_t cmd_pending;
+    zb_uint32_t cmd_last_kind;
+    zb_uint32_t cmd_last_target;
+    zb_uint32_t cmd_last_result;
+    zb_uint32_t cmd_last_report_delay_ms;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -328,7 +357,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '5'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '6'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -606,6 +635,20 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_POSITION_WAKE_COUNT, &blind_ctx.position_wake_count, Z
 ZB_ZCL_SET_ATTR_DESC_M(P3_POSITION_WAKE_SUPPRESSED, &blind_ctx.position_wake_suppressed, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_POSITION_WAKE_LAST_MS, &blind_ctx.position_wake_last_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_POSITION_WAKE_LATCHED, &blind_ctx.position_wake_latched, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_QUEUED, &blind_ctx.cmd_queued, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_TX_OK, &blind_ctx.cmd_tx_ok, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_TX_FAILED, &blind_ctx.cmd_tx_failed, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_MCU_REPORT, &blind_ctx.cmd_mcu_report, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_POSITION_REPORTED, &blind_ctx.cmd_position_reported, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_STOP_REPORTED, &blind_ctx.cmd_stop_reported, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_TIMEOUT_NO_REPORT, &blind_ctx.cmd_timeout_no_report, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_TIMEOUT_NO_TARGET, &blind_ctx.cmd_timeout_no_target, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_SUPERSEDED, &blind_ctx.cmd_superseded, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_PENDING, &blind_ctx.cmd_pending, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_LAST_KIND, &blind_ctx.cmd_last_kind, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_LAST_TARGET, &blind_ctx.cmd_last_target, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_LAST_RESULT, &blind_ctx.cmd_last_result, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_LAST_REPORT_DELAY_MS, &blind_ctx.cmd_last_report_delay_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -780,6 +823,20 @@ static void apply_p3_zcl_state(zb_uint8_t dummy)
     blind_ctx.diag_rx_bytes = diag.rx_bytes;
     blind_ctx.diag_tx_frames = diag.tx_frames;
     blind_ctx.diag_zigbee_commands = diag.zigbee_commands;
+    blind_ctx.cmd_queued = diag.command_monitor.queue_accepted;
+    blind_ctx.cmd_tx_ok = diag.command_monitor.tx_success;
+    blind_ctx.cmd_tx_failed = diag.command_monitor.tx_failed;
+    blind_ctx.cmd_mcu_report = diag.command_monitor.mcu_report_after_tx;
+    blind_ctx.cmd_position_reported = diag.command_monitor.position_reached_reported;
+    blind_ctx.cmd_stop_reported = diag.command_monitor.stop_reported;
+    blind_ctx.cmd_timeout_no_report = diag.command_monitor.timed_out_no_report;
+    blind_ctx.cmd_timeout_no_target = diag.command_monitor.timed_out_no_target;
+    blind_ctx.cmd_superseded = diag.command_monitor.superseded;
+    blind_ctx.cmd_pending = diag.command_monitor.pending ? 1U : 0U;
+    blind_ctx.cmd_last_kind = diag.command_monitor.last_kind;
+    blind_ctx.cmd_last_target = diag.command_monitor.last_target;
+    blind_ctx.cmd_last_result = diag.command_monitor.last_result;
+    blind_ctx.cmd_last_report_delay_ms = diag.command_monitor.last_report_delay_ms;
     blind_ctx.diag_button_press_count = (zb_uint32_t)atomic_get(&p3_button_press_count);
     blind_ctx.diag_button_last_event = (zb_uint8_t)atomic_get(&p3_button_last_event);
     blind_ctx.diag_local_finish_presses = (zb_uint32_t)atomic_get(&p3_local_finish_presses);
