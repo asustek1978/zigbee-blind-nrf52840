@@ -17,6 +17,7 @@ target_sources(app PRIVATE
   src/tuya_motor.c
   src/tuya_motor_state.c
   src/p3_soft_uart.c
+  src/p3_session_diag.c
   src/p3_power_diag.c
   src/tuya_uart_hybrid.c
 )
