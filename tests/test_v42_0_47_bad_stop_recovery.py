@@ -21,7 +21,7 @@ class TestV42047BadStopRecovery(unittest.TestCase):
 
     def test_firmware_id_and_selected_baseline(self):
         self.assertIn(
-            "blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '7'}",
+            "blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '8'}",
             self.main)
         self.assertIn("#define P3_FIRST_SAMPLE_US 156U", self.rx)
         self.assertIn("#define P3_BIT_US 104U", self.rx)
