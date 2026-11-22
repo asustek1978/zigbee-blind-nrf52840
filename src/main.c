@@ -192,6 +192,10 @@
 #define P3_CMD_LAST_TARGET 0xF184U
 #define P3_CMD_LAST_RESULT 0xF185U
 #define P3_CMD_LAST_REPORT_DELAY_MS 0xF186U
+#define P3_PPI_ENABLED 0xF187U
+#define P3_PPI_STARTS 0xF188U
+#define P3_PPI_FALLBACKS 0xF189U
+#define P3_PPI_LATE_IRQS 0xF18AU
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -330,6 +334,10 @@ struct blind_device_context {
     zb_uint32_t cmd_last_target;
     zb_uint32_t cmd_last_result;
     zb_uint32_t cmd_last_report_delay_ms;
+    zb_uint32_t ppi_enabled;
+    zb_uint32_t ppi_starts;
+    zb_uint32_t ppi_fallbacks;
+    zb_uint32_t ppi_late_irqs;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -357,7 +365,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '7'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '8'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -649,6 +657,10 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_LAST_KIND, &blind_ctx.cmd_last_kind, ZB_ZCL_ATTR_T
 ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_LAST_TARGET, &blind_ctx.cmd_last_target, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_LAST_RESULT, &blind_ctx.cmd_last_result, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_CMD_LAST_REPORT_DELAY_MS, &blind_ctx.cmd_last_report_delay_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_PPI_ENABLED, &blind_ctx.ppi_enabled, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_PPI_STARTS, &blind_ctx.ppi_starts, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_PPI_FALLBACKS, &blind_ctx.ppi_fallbacks, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_PPI_LATE_IRQS, &blind_ctx.ppi_late_irqs, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -1395,6 +1407,10 @@ int main(void)
             blind_ctx.position_wake_suppressed = p3_soft_uart_position_wake_suppressed();
             blind_ctx.position_wake_last_ms = p3_soft_uart_position_wake_last_ms();
             blind_ctx.position_wake_latched = p3_soft_uart_position_wake_latched();
+            blind_ctx.ppi_enabled = p3_soft_uart_ppi_enabled();
+            blind_ctx.ppi_starts = p3_soft_uart_ppi_starts();
+            blind_ctx.ppi_fallbacks = p3_soft_uart_ppi_fallbacks();
+            blind_ctx.ppi_late_irqs = p3_soft_uart_ppi_late_irqs();
             blind_ctx.rx_error_count = blind_ctx.rx_framing_errors +
                                        blind_ctx.rx_ring_overflows +
                                        p3_soft_uart_hardware_errors() +
