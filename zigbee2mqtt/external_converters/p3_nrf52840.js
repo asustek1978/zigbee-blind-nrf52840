@@ -239,7 +239,7 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v42.0-46 passive UART command outcome telemetry; MCU reports are not physical proof, bench only',
+    description: 'P3 nRF52840 v42.0-46 passive UART command outcome telemetry; MCU reports are not physical proof; battery path unverified, bench only',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee, refreshAllDiagnosticsToZigbee, batteryToZigbee],
     exposes: [
