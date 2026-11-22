@@ -21,6 +21,7 @@
 #include "tuya_uart.h"
 #include "tuya_frame.h"
 #include "p3_soft_uart.h"
+#include "p3_session_diag.h"
 #include "p3_power_diag.h"
 
 /* Select HA Window Covering device definition before ZBOSS header import. */
@@ -1318,6 +1319,7 @@ int main(void)
             if (tuya_parser_feed(&parser, received, &decoded)) {
                 blind_ctx.tuya_frames_ok++;
                 blind_ctx.diag_valid_frames++;
+                p3_session_diag_note_valid_frame();
                 blind_ctx.diag_last_command = decoded.command;
                 blind_ctx.diag_last_format = decoded.format;
                 tuya_uart_accept_report(&decoded);
