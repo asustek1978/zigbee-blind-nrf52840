@@ -24,7 +24,7 @@
 #include <hal/nrf_timer.h>
 #include <hal/nrf_gpio.h>
 #include <hal/nrf_uarte.h>
-#include <nrfx_gppi.h>
+#include <helpers/nrfx_gppi.h>
 #include "p3_soft_uart.h"
 #include "p3_uart_watchdog.h"
 #include "p3_position_wake.h"
