@@ -197,6 +197,21 @@
 #define P3_PPI_STARTS 0xF188U
 #define P3_PPI_FALLBACKS 0xF189U
 #define P3_PPI_LATE_IRQS 0xF18AU
+/* v42.0-48: immutable per-session RX snapshot plus cumulative exit outcomes. */
+#define P3_SESSION_LAST_ID 0xF18BU
+#define P3_SESSION_LAST_BYTES 0xF18CU
+#define P3_SESSION_LAST_FRAMES 0xF18DU
+#define P3_SESSION_LAST_STOP 0xF18EU
+#define P3_SESSION_LAST_GOAL 0xF18FU
+#define P3_SESSION_LAST_TARGET 0xF190U
+#define P3_SESSION_LAST_DP3 0xF191U
+#define P3_SESSION_LAST_SILENCE_MS 0xF192U
+#define P3_SESSION_LAST_REASON 0xF193U
+#define P3_SESSION_ACTIVE_ID 0xF194U
+#define P3_SESSION_TOTAL 0xF195U
+#define P3_SESSION_STOP_EXITS 0xF196U
+#define P3_SESSION_WATCHDOG_EXITS 0xF197U
+#define P3_SESSION_WATCHDOG_GOAL_NO_STOP 0xF198U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -339,6 +354,20 @@ struct blind_device_context {
     zb_uint32_t ppi_starts;
     zb_uint32_t ppi_fallbacks;
     zb_uint32_t ppi_late_irqs;
+    zb_uint32_t session_last_id;
+    zb_uint32_t session_last_bytes;
+    zb_uint32_t session_last_valid_frames;
+    zb_uint32_t session_last_stop;
+    zb_uint32_t session_last_goal;
+    zb_uint32_t session_last_target;
+    zb_uint32_t session_last_dp3;
+    zb_uint32_t session_last_silence_ms;
+    zb_uint32_t session_last_reason;
+    zb_uint32_t session_active_id;
+    zb_uint32_t session_total;
+    zb_uint32_t session_stop_guard_exits;
+    zb_uint32_t session_watchdog_exits;
+    zb_uint32_t session_watchdog_goal_no_stop;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -662,6 +691,20 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_PPI_ENABLED, &blind_ctx.ppi_enabled, ZB_ZCL_ATTR_TYPE_
 ZB_ZCL_SET_ATTR_DESC_M(P3_PPI_STARTS, &blind_ctx.ppi_starts, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_PPI_FALLBACKS, &blind_ctx.ppi_fallbacks, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_PPI_LATE_IRQS, &blind_ctx.ppi_late_irqs, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_LAST_ID, &blind_ctx.session_last_id, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_LAST_BYTES, &blind_ctx.session_last_bytes, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_LAST_FRAMES, &blind_ctx.session_last_valid_frames, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_LAST_STOP, &blind_ctx.session_last_stop, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_LAST_GOAL, &blind_ctx.session_last_goal, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_LAST_TARGET, &blind_ctx.session_last_target, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_LAST_DP3, &blind_ctx.session_last_dp3, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_LAST_SILENCE_MS, &blind_ctx.session_last_silence_ms, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_LAST_REASON, &blind_ctx.session_last_reason, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_ACTIVE_ID, &blind_ctx.session_active_id, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_TOTAL, &blind_ctx.session_total, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_STOP_EXITS, &blind_ctx.session_stop_guard_exits, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_WATCHDOG_EXITS, &blind_ctx.session_watchdog_exits, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_WATCHDOG_GOAL_NO_STOP, &blind_ctx.session_watchdog_goal_no_stop, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -1413,6 +1456,22 @@ int main(void)
             blind_ctx.ppi_starts = p3_soft_uart_ppi_starts();
             blind_ctx.ppi_fallbacks = p3_soft_uart_ppi_fallbacks();
             blind_ctx.ppi_late_irqs = p3_soft_uart_ppi_late_irqs();
+            struct p3_session_snapshot session_stats;
+            p3_session_diag_get(&session_stats);
+            blind_ctx.session_last_id = session_stats.id;
+            blind_ctx.session_last_bytes = session_stats.bytes;
+            blind_ctx.session_last_valid_frames = session_stats.valid_frames;
+            blind_ctx.session_last_stop = session_stats.stop_seen;
+            blind_ctx.session_last_goal = session_stats.goal_seen;
+            blind_ctx.session_last_target = session_stats.target;
+            blind_ctx.session_last_dp3 = session_stats.last_dp3;
+            blind_ctx.session_last_silence_ms = session_stats.silence_ms;
+            blind_ctx.session_last_reason = session_stats.reason;
+            blind_ctx.session_active_id = session_stats.active_id;
+            blind_ctx.session_total = session_stats.total_sessions;
+            blind_ctx.session_stop_guard_exits = session_stats.stop_guard_exits;
+            blind_ctx.session_watchdog_exits = session_stats.watchdog_exits;
+            blind_ctx.session_watchdog_goal_no_stop = session_stats.watchdog_goal_no_stop;
             blind_ctx.rx_error_count = blind_ctx.rx_framing_errors +
                                        blind_ctx.rx_ring_overflows +
                                        p3_soft_uart_hardware_errors() +
