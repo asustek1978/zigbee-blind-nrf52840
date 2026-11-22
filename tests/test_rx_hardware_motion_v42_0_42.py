@@ -45,7 +45,9 @@ class TestConditionalHardwareRx(unittest.TestCase):
                 self.assertIn(f"uint32_t p3_soft_uart_{name}(void)", self.rx)
                 self.assertIn(f"{name}: 0x{attr},", self.js)
         self.assertIn("key: ['refresh_all_diagnostics']", self.js)
-        self.assertIn("e.numeric('refresh_all_diagnostics', ea.STATE_GET)", self.js)
+        self.assertIn("key: ['refresh_bench_diagnostics']", self.js)
+        self.assertIn("e.numeric('refresh_bench_diagnostics', ea.STATE_GET)", self.js)
+        self.assertIn("...visibleBenchDiagnostics.map((name) =>", self.js)
         ids = re.findall(r"#define P3_\w+ 0x(F[0-9A-F]{3})U", self.main)
         self.assertEqual(len(ids), len(set(ids)))
 
