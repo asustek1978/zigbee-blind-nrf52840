@@ -148,7 +148,9 @@ static bool uart_prepared;
 static uint32_t uart_last_byte_ms;
 static bool p3_ppi_available;
 static bool p3_ppi_armed;
-static uint8_t p3_ppi_ch;
+/* SDK R23 uses nrfx GPPI connection handles (not raw-channel alloc). */
+static nrfx_gppi_handle_t p3_ppi_conn;
+static uint32_t p3_ppi_event_endpoint;
 static atomic_t p3_ppi_starts;
 static atomic_t p3_ppi_fallbacks;
 static atomic_t p3_ppi_late_irqs;
@@ -171,12 +173,18 @@ static void p3_ppi_setup(void)
         if (((c & GPIOTE_CONFIG_MODE_Msk) >> GPIOTE_CONFIG_MODE_Pos) != GPIOTE_CONFIG_MODE_Event ||
             ((c & GPIOTE_CONFIG_PSEL_Msk) >> GPIOTE_CONFIG_PSEL_Pos) != P3_RX_PIN ||
             ((c & GPIOTE_CONFIG_POLARITY_Msk) >> GPIOTE_CONFIG_POLARITY_Pos) != GPIOTE_CONFIG_POLARITY_HiToLo) continue;
-        uint8_t ch;
-        if (nrfx_gppi_channel_alloc(&ch) != NRFX_SUCCESS) return;
-        nrfx_gppi_channel_endpoints_setup(ch,
-            (uint32_t)(uintptr_t)&NRF_GPIOTE->EVENTS_IN[i],
-            (uint32_t)(uintptr_t)&NRF_TIMER3->TASKS_START);
-        p3_ppi_ch = ch;
+        const uint32_t eep =
+            (uint32_t)(uintptr_t)&NRF_GPIOTE->EVENTS_IN[i];
+        const uint32_t tep =
+            (uint32_t)(uintptr_t)&NRF_TIMER3->TASKS_START;
+        nrfx_gppi_handle_t conn;
+        /* One managed event->task connection on nRF52840 PPI.
+         * Never alter Zephyr's already configured GPIOTE IN channel.
+         * Return to the prior GPIO IRQ path if resources are unavailable.
+         */
+        if (nrfx_gppi_conn_alloc(eep, tep, &conn) != 0) return;
+        p3_ppi_conn = conn;
+        p3_ppi_event_endpoint = eep;
         p3_ppi_available = true;
         return;
     }
@@ -189,7 +197,7 @@ static void p3_ppi_disarm(void)
      */
     unsigned int key = irq_lock();
     if (p3_ppi_available && p3_ppi_armed) {
-        nrfx_gppi_channels_disable(BIT(p3_ppi_ch));
+        nrfx_gppi_conn_disable(p3_ppi_conn);
         p3_ppi_armed = false;
     }
     irq_unlock(key);
@@ -202,7 +210,7 @@ static void p3_ppi_arm(void)
         nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_CLEAR);
         nrf_timer_event_clear(NRF_TIMER3, NRF_TIMER_EVENT_COMPARE0);
         nrf_timer_cc_set(NRF_TIMER3, NRF_TIMER_CC_CHANNEL0, P3_FIRST_SAMPLE_US);
-        nrfx_gppi_channels_enable(BIT(p3_ppi_ch));
+        nrfx_gppi_conn_enable(p3_ppi_conn);
         p3_ppi_armed = true;
     }
     irq_unlock(key);
@@ -769,7 +777,10 @@ void p3_soft_uart_stop(void)
     }
     p3_ppi_disarm();
     if (p3_ppi_available) {
-        nrfx_gppi_channel_free(p3_ppi_ch);
+        nrfx_gppi_conn_free(
+            p3_ppi_event_endpoint,
+            (uint32_t)(uintptr_t)&NRF_TIMER3->TASKS_START,
+            p3_ppi_conn);
         p3_ppi_available = false;
     }
     if (atomic_get(&uart_active)) {
