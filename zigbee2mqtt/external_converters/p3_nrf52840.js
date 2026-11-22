@@ -275,7 +275,7 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v42.0-48 GPIOTE/PPI TIMER3 edge-start bench; motor logic unchanged; unverified',
+    description: 'P3 nRF52840 v42.0-48 GPIOTE/PPI TIMER3 edge-start bench; motor logic unchanged; battery path unverified; bench only',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee, refreshAllDiagnosticsToZigbee, batteryToZigbee],
     exposes: [
