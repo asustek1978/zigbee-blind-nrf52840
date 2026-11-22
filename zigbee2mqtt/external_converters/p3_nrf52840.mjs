@@ -103,6 +103,10 @@ const diagnosticAttributes = {
     cmd_last_target: 0xF184,
     cmd_last_result: 0xF185,
     cmd_last_report_delay_ms: 0xF186,
+    ppi_enabled: 0xF187,
+    ppi_starts: 0xF188,
+    ppi_fallbacks: 0xF189,
+    ppi_late_irqs: 0xF18A,
     tuya_frames_ok: 0xF133,
     tuya_frames_rejected: 0xF134,
     stress_rx_bytes: 0xF12C,
@@ -191,6 +195,10 @@ const diagnosticDescriptions = {
     cmd_last_target: 'Last successfully transmitted requested position 0..100; 255=STOP/unspecified',
     cmd_last_result: '0=none/pending; 1=target reported; 2=STOP reported; 3=no MCU report timeout; 4=no target timeout; 5=superseded; 6=UART TX failed',
     cmd_last_report_delay_ms: 'Delay from completed UART TX to first valid MCU DP1/DP3 report for the latest TX; UINT32_MAX means not yet reported',
+    ppi_enabled: '1=GPIOTE IN event and free PPI channel found; 0=original GPIO IRQ timing fallback',
+    ppi_starts: 'Number of first-byte TIMER3 starts synchronized by GPIOTE/PPI',
+    ppi_fallbacks: 'Original GPIO IRQ start used because PPI was unavailable or no timer progress was visible',
+    ppi_late_irqs: 'GPIOTE GPIO callback reached after first 156us comparison deadline; timing risk',
 };
 const diagnosticFromZigbee = {
     cluster: 'genBasic',
@@ -239,7 +247,7 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v42.0-46 passive UART command outcome telemetry; MCU reports are not physical proof; battery path unverified, bench only',
+    description: 'P3 nRF52840 v42.0-48 GPIOTE/PPI TIMER3 edge-start bench; motor logic unchanged; unverified',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee, refreshAllDiagnosticsToZigbee, batteryToZigbee],
     exposes: [
