@@ -14,11 +14,17 @@ CONV = (ROOT / "zigbee2mqtt" / "external_converters" / "p3_nrf52840.mjs").read_t
 
 class PpiStartSourceContract(unittest.TestCase):
     def test_gpiote_event_routes_to_timer_start_only(self):
-        self.assertIn("nrfx_gppi_channel_alloc(&ch)", RX)
+        self.assertIn("nrfx_gppi_conn_alloc(eep, tep, &conn)", RX)
         self.assertIn("&NRF_GPIOTE->EVENTS_IN[i]", RX)
         self.assertIn("&NRF_TIMER3->TASKS_START", RX)
+        self.assertIn("nrfx_gppi_conn_enable(p3_ppi_conn)", RX)
+        self.assertIn("nrfx_gppi_conn_disable(p3_ppi_conn)", RX)
+        self.assertIn("nrfx_gppi_conn_free(", RX)
         self.assertIn("p3_ppi_setup();", RX)
         self.assertIn("p3_ppi_arm();", RX)
+        # Pinned Nordic R23 header does not provide the former API.
+        self.assertNotIn("nrfx_gppi_channel_endpoints_setup", RX)
+        self.assertNotIn("nrfx_gppi_channels_enable(BIT(", RX)
 
     def test_fallback_and_no_repeat_start_within_data_bits(self):
         self.assertIn("p3_ppi_disarm(); /* Disarm before any further falling data-bit edge. */", RX)
