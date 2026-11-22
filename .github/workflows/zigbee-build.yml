@@ -39,6 +39,7 @@ on:
       - experiment/v42-0-45-adc-cal-motion-wake
       - experiment/v42-0-46-command-outcome-monitor
       - experiment/v42-0-47-bad-stop-gpio-recovery
+      - experiment/v42-0-48-gpiote-ppi-timer-start
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -182,6 +183,11 @@ jobs:
         run: |
           PYTHONPATH=app/tools python3 -m unittest discover \
             -s app/tests -p 'test_v42_0_47_bad_stop_recovery.py' -v
+
+      - name: Test v42.0-48 PPI edge-start regression contract
+        run: |
+          PYTHONPATH=app/tools python3 -m unittest discover \
+            -s app/tests -p 'test_v42_0_48_ppi_edge_start.py' -v
 
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |
@@ -419,23 +425,32 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-47 UNVERIFIED experimental UF2
+      - name: Package P3-NRF52840 v42.0-48 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-47-BAD-STOP-GPIO-RECOVERY-BENCH-UNVERIFIED.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-48-GPIOTE-PPI-TIMER-START-BENCH-UNVERIFIED.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-47-BAD-STOP-GPIO-RECOVERY-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-47-BAD-STOP-GPIO-RECOVERY-BENCH-UNVERIFIED.uf2
+            sha256sum P3-NRF52840-v42-0-48-GPIOTE-PPI-TIMER-START-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-48-GPIOTE-PPI-TIMER-START-BENCH-UNVERIFIED.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-47-BAD-STOP-GPIO-RECOVERY-BENCH-UNVERIFIED.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-48-GPIOTE-PPI-TIMER-START-BENCH-UNVERIFIED.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
-          P3-NRF52840 v42.0-47 — INVALID SOFTWARE STOP RECOVERY
+          P3-NRF52840 v42.0-48 — GPIOTE/PPI TIMER3 EDGE-START BENCH
+          Experimental GPIOTE IN -> dynamically allocated PPI channel
+          -> TIMER3 TASKS_START. Zephyr GPIO driver retains GPIOTE ownership.
+          No IN channel or free PPI: original GPIO interrupt timing fallback.
+          Diagnostic attributes: Basic 0xF187..0xF18A.
+          PPI path does NOT restart TIMER3 inside the GPIO callback.
+          HFCLK startup may still cause sampling errors: verify on HW-954.
+          Motor control/calibration/120s watchdog unchanged from v42.0-47.
+          EXPERIMENTAL: NOT VALIDATED on physical blind.
+          Parent v42.0-47 — INVALID SOFTWARE STOP RECOVERY
           On an invalid STOP bit in low-power GPIO/TIMER3 mode,
           terminate the speculative software-byte chain, stop TIMER3,
           disable UARTE0 warmup if needed, reset bit decoder and
