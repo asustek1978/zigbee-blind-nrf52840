@@ -13,6 +13,7 @@
 #include "tuya_motor.h"
 #include "tuya_motor_state.h"
 #include "p3_soft_uart.h" /* passive RX motion-state classification only */
+#include "p3_session_diag.h"
 
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -177,6 +178,14 @@ void tuya_uart_accept_report(const struct tuya_frame *frame)
     if (accepted) {
         (void)tuya_foreach_report_dp(frame, p3_command_report_capture,
                                     &command_report);
+    }
+    if (accepted) {
+        /* Only freshly validated DP1/DP3 from this MCU report count.
+         * No cached motor position and no command outcome is inferred.
+         */
+        p3_session_diag_note_mcu_report(
+            command_report.dp1_present && command_report.dp1 == 1U,
+            command_report.dp3_present, command_report.dp3);
     }
     bool monitor_progress = false;
     k_mutex_lock(&p3_diag_mutex, K_FOREVER);
@@ -431,6 +440,10 @@ static void transmit_main(void *a, void *b, void *c)
         }
         k_mutex_unlock(&p3_diag_mutex);
         if (completed) {
+            /* Track only a successfully transmitted explicit target.
+             * STOP or a non-position command publishes 255 (unknown).
+             */
+            p3_session_diag_note_tx_target(frame.monitor_target);
             /* Passive deadline, not a motor watchdog or retry. */
             (void)k_work_reschedule(&p3_cmd_monitor_timeout,
                                     K_MSEC(P3_CMD_MONITOR_TIMEOUT_MS));
