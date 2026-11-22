@@ -180,20 +180,29 @@ static void p3_ppi_setup(void)
 }
 static void p3_ppi_disarm(void)
 {
+    /* Protect the channel state against GPIO IRQ preemption while the RX
+     * owner thread re-arms the idle listener. On a single-core nRF52 this
+     * short critical section serializes hardware enable and software flag.
+     */
+    unsigned int key = irq_lock();
     if (p3_ppi_available && p3_ppi_armed) {
         nrfx_gppi_channels_disable(BIT(p3_ppi_ch));
         p3_ppi_armed = false;
     }
+    irq_unlock(key);
 }
 static void p3_ppi_arm(void)
 {
-    if (!p3_ppi_available || p3_ppi_armed) return;
-    /* Reset the stopped timer before edge. PPI does only START. */
-    nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_CLEAR);
-    nrf_timer_event_clear(NRF_TIMER3, NRF_TIMER_EVENT_COMPARE0);
-    nrf_timer_cc_set(NRF_TIMER3, NRF_TIMER_CC_CHANNEL0, P3_FIRST_SAMPLE_US);
-    nrfx_gppi_channels_enable(BIT(p3_ppi_ch));
-    p3_ppi_armed = true;
+    unsigned int key = irq_lock();
+    if (p3_ppi_available && !p3_ppi_armed) {
+        /* Reset the stopped timer before edge. PPI does only START. */
+        nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_CLEAR);
+        nrf_timer_event_clear(NRF_TIMER3, NRF_TIMER_EVENT_COMPARE0);
+        nrf_timer_cc_set(NRF_TIMER3, NRF_TIMER_CC_CHANNEL0, P3_FIRST_SAMPLE_US);
+        nrfx_gppi_channels_enable(BIT(p3_ppi_ch));
+        p3_ppi_armed = true;
+    }
+    irq_unlock(key);
 }
 
 static void p3_uart_disable(void)
