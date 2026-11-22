@@ -189,6 +189,19 @@ jobs:
           PYTHONPATH=app/tools python3 -m unittest discover \
             -s app/tests -p 'test_v42_0_48_ppi_edge_start.py' -v
 
+      - name: Test v42.0-48 per-session UARTE0 ledger state machine
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+            -Iapp/tests/host_stubs -Iapp/include \
+            app/src/p3_session_diag.c app/tests/test_p3_session_diag.c \
+            -o /tmp/test_p3_session_diag
+          /tmp/test_p3_session_diag
+
+      - name: Test v42.0-48 per-session source-only observability contract
+        run: |
+          PYTHONPATH=app/tools python3 -m unittest discover \
+            -s app/tests -p 'test_v42_0_48_session_observability.py' -v
+
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |
           mkdir workspace
