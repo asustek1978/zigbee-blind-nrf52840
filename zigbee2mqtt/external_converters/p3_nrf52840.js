@@ -133,6 +133,39 @@ const diagnosticAttributes = {
     diag_last_command: 0xF105,
     diag_last_format: 0xF106,
 };
+/* v42.0-48 compact bench UI: 25 read-only counters needed to compare
+ * low-power RX, PPI reliability, and the DP3-without-STOP watchdog issue.
+ * The complete firmware attribute map stays available for manual GET and
+ * archived diagnostics; do not remove it or the working v41.x mapping.
+ */
+const visibleBenchDiagnostics = [
+    'uart_rx_ready',
+    'tuya_frames_ok',
+    'tuya_frames_rejected',
+    'rx_framing_errors',
+    'rx_ring_overflows',
+    'rx_bad_stop_post_exit_30s',
+    'hw_direct_active',
+    'hw_direct_enters',
+    'hw_direct_max_timeouts',
+    'ppi_enabled',
+    'ppi_starts',
+    'ppi_fallbacks',
+    'ppi_late_irqs',
+    'session_last_id',
+    'session_last_bytes',
+    'session_last_valid_frames',
+    'session_last_stop',
+    'session_last_goal',
+    'session_last_target',
+    'session_last_dp3',
+    'session_last_silence_ms',
+    'session_last_reason',
+    'session_total',
+    'session_watchdog_exits',
+    'session_watchdog_goal_no_stop',
+];
+
 const diagnosticDescriptions = {
     rx_framing_errors: 'GPIO/TIMER3 software UART invalid STOP bit; may include noise/false starts',
     rx_ring_overflows: 'Bytes dropped because the RX ring buffer was full (software or EasyDMA)',
@@ -255,6 +288,20 @@ const diagnosticToZigbee = {
 // A single Zigbee2MQTT GET refreshes all firmware diagnostic attributes.
 // Split reads into small ZCL frames to avoid oversized responses; do not send
 // motor commands or reset/modify any diagnostic counters.
+/* A compact manual refresh of the 25 bench fields. Unlike refresh_all,
+ * this issues only 5 ZCL Basic read batches and avoids dozens of reads.
+ * Not called automatically when an older kitchen v41.3 device joins.
+ */
+const refreshBenchDiagnosticsToZigbee = {
+    key: ['refresh_bench_diagnostics'],
+    convertGet: async (entity) => {
+        const attributes = visibleBenchDiagnostics.map((name) => diagnosticAttributes[name]);
+        const batchSize = 5;
+        for (let i = 0; i < attributes.length; i += batchSize) {
+            await entity.read('genBasic', attributes.slice(i, i + batchSize));
+        }
+    },
+};
 const refreshAllDiagnosticsToZigbee = {
     key: ['refresh_all_diagnostics'],
     convertGet: async (entity) => {
@@ -277,13 +324,13 @@ export default {
     vendor: 'LocalDIY',
     description: 'P3 nRF52840 v42.0-48 GPIOTE/PPI TIMER3 edge-start bench; motor logic unchanged; battery path unverified; bench only',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
-    toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee, refreshAllDiagnosticsToZigbee, batteryToZigbee],
+    toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee, refreshBenchDiagnosticsToZigbee, refreshAllDiagnosticsToZigbee, batteryToZigbee],
     exposes: [
         e.cover_position(), e.battery(),
-        e.numeric('refresh_all_diagnostics', ea.STATE_GET).withDescription(
-            'Click refresh to update all diagnostics in small Zigbee Basic read batches; no motor command is sent'
+        e.numeric('refresh_bench_diagnostics', ea.STATE_GET).withDescription(
+            'Manually read 25 bench UART/PPI/session counters in 5 small Zigbee batches; no motor command'
         ),
-        ...Object.keys(diagnosticAttributes).map((name) =>
+        ...visibleBenchDiagnostics.map((name) =>
             e.numeric(name, ea.STATE_GET).withDescription(
                 diagnosticDescriptions[name] ||
                     'Read-only diagnostic from Zigbee Basic cluster; first4/next4 are little-endian packed bytes'
