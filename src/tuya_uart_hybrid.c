@@ -46,6 +46,8 @@ struct p3_tx_msg {
     uint32_t zigbee_at_ms;
     bool local_finish; /* v42.0-42: no effect on original motor payload */
     bool is_stop;
+    uint8_t monitor_kind;
+    uint8_t monitor_target;
 };
 
 K_MSGQ_DEFINE(p3_tx_queue, sizeof(struct p3_tx_msg), P3_TX_QUEUE_DEPTH, 4);
@@ -65,6 +67,43 @@ static atomic_t last_tx_ms;
 
 /* Defined by src/main.c, ensures ZCL state updates on the ZBOSS thread. */
 extern void p3_zcl_schedule_sync(void);
+
+/* One delayed, read-only timeout check per successful UART transmission.
+ * No motor operation, no polling and no retry is performed by this work.
+ */
+static void p3_command_monitor_timeout_work(struct k_work *work)
+{
+    ARG_UNUSED(work);
+    k_mutex_lock(&p3_diag_mutex, K_FOREVER);
+    p3_cmd_monitor_expire(&p3_diag.command_monitor, k_uptime_get_32());
+    k_mutex_unlock(&p3_diag_mutex);
+}
+K_WORK_DELAYABLE_DEFINE(p3_cmd_monitor_timeout, p3_command_monitor_timeout_work);
+
+/* Inspect fresh, actually present DP1 / DP3 from validated MCU reports.
+ * Do NOT count other DPs or the previously cached MCU state as responses.
+ */
+struct p3_command_report {
+    bool dp1_present;
+    bool dp3_present;
+    uint8_t dp1;
+    uint8_t dp3;
+};
+static void p3_command_report_capture(const struct tuya_dp *dp, void *user)
+{
+    struct p3_command_report *r = user;
+    uint32_t val;
+    if (!tuya_dp_as_uint32(dp, &val)) return;
+    if (dp->id == P3_DP_MOTION && dp->type == 0x04U &&
+        dp->length == 1U && val <= 2U) {
+        r->dp1_present = true;
+        r->dp1 = (uint8_t)val;
+    } else if (dp->id == P3_DP_POSITION && dp->type == 0x02U &&
+               dp->length == 4U && val <= 100U) {
+        r->dp3_present = true;
+        r->dp3 = (uint8_t)val;
+    }
+}
 
 void tuya_uart_set_rx_ready(bool ready)
 {
@@ -103,6 +142,7 @@ void tuya_uart_accept_report(const struct tuya_frame *frame)
     bool accepted;
     uint8_t reported_motion = 0xffU;
     struct p3_fresh_motion fresh_motion = {0};
+    struct p3_command_report command_report = {0};
     if (frame == NULL) {
         return;
     }
@@ -129,7 +169,21 @@ void tuya_uart_accept_report(const struct tuya_frame *frame)
         p3_soft_uart_note_changed_position(motor_state.position);
     }
 
+    /* Existing RX path already validated this MCU report. The monitor
+     * only observes DP1/DP3 fields and NEVER drives motor actions.
+     */
+    if (accepted) {
+        (void)tuya_foreach_report_dp(frame, p3_command_report_capture,
+                                    &command_report);
+    }
     k_mutex_lock(&p3_diag_mutex, K_FOREVER);
+    if (accepted) {
+        p3_cmd_monitor_mcu_report(
+            &p3_diag.command_monitor,
+            command_report.dp1_present, command_report.dp1,
+            command_report.dp3_present, command_report.dp3,
+            k_uptime_get_32());
+    }
     p3_diag.valid_frames++;
     p3_diag.last_command = frame->command;
     p3_diag.last_format = (uint8_t)frame->format;
@@ -188,7 +242,8 @@ void tuya_uart_mark_zigbee_command(void)
      */
 }
 
-static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
+static bool queue_motor_frame(const uint8_t *bytes, size_t length,
+                              bool is_stop, uint8_t kind, uint8_t target)
 {
     struct p3_tx_msg msg = {0};
     if (!IS_ENABLED(CONFIG_P3_UART_TX_ENABLE) ||
@@ -202,6 +257,8 @@ static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
     memcpy(msg.bytes, bytes, length);
     msg.length = (uint8_t)length;
     msg.is_stop = is_stop;
+    msg.monitor_kind = kind;
+    msg.monitor_target = target;
     msg.queued_at_ms = k_uptime_get_32();
     msg.zigbee_at_ms = (uint32_t)atomic_set(&pending_zigbee_timestamp, 0);
     /* STOP cancels queued future movement. An already transmitting
@@ -215,6 +272,9 @@ static bool queue_motor_frame(const uint8_t *bytes, size_t length, bool is_stop)
      */
     const bool accepted = k_msgq_put(&p3_tx_queue, &msg, K_NO_WAIT) == 0;
     if (accepted) {
+        k_mutex_lock(&p3_diag_mutex, K_FOREVER);
+        p3_diag.command_monitor.queue_accepted++;
+        k_mutex_unlock(&p3_diag_mutex);
         p3_soft_uart_note_explicit_motor_command();
         p3_soft_uart_request_motor_rx();
     }
@@ -225,7 +285,11 @@ bool tuya_uart_submit_action(enum tuya_motor_action action)
 {
     uint8_t frame[P3_TX_FRAME_CAP];
     size_t n = tuya_motor_encode_action(action, frame, sizeof(frame));
-    return queue_motor_frame(frame, n, action == TUYA_MOTOR_STOP);
+    return queue_motor_frame(frame, n, action == TUYA_MOTOR_STOP,
+        action == TUYA_MOTOR_OPEN ? P3_CMD_KIND_OPEN :
+        (action == TUYA_MOTOR_CLOSE ? P3_CMD_KIND_CLOSE : P3_CMD_KIND_STOP),
+        action == TUYA_MOTOR_OPEN ? 0U :
+        (action == TUYA_MOTOR_CLOSE ? 100U : 255U));
 }
 
 bool tuya_uart_submit_position(uint8_t percent)
@@ -235,7 +299,7 @@ bool tuya_uart_submit_position(uint8_t percent)
         return false;
     }
     size_t n = tuya_motor_encode_position(percent, frame, sizeof(frame));
-    return queue_motor_frame(frame, n, false);
+    return queue_motor_frame(frame, n, false, P3_CMD_KIND_POSITION, percent);
 }
 
 bool tuya_uart_submit_hw_calibration(uint8_t command)
@@ -338,6 +402,9 @@ static void transmit_main(void *a, void *b, void *c)
         bool completed = p3_transmit_one(&frame);
         const uint32_t done = k_uptime_get_32();
         k_mutex_lock(&p3_diag_mutex, K_FOREVER);
+        p3_cmd_monitor_tx_completed(
+            &p3_diag.command_monitor, frame.monitor_kind,
+            frame.monitor_target, completed, done);
         if (completed) {
             p3_diag.tx_frames++;
             p3_diag.last_queue_to_tx_ms = started - frame.queued_at_ms;
@@ -350,6 +417,9 @@ static void transmit_main(void *a, void *b, void *c)
         }
         k_mutex_unlock(&p3_diag_mutex);
         if (completed) {
+            /* Passive deadline, not a motor watchdog or retry. */
+            (void)k_work_reschedule(&p3_cmd_monitor_timeout,
+                                    K_MSEC(P3_CMD_MONITOR_TIMEOUT_MS));
             atomic_set(&last_tx_ms, (atomic_val_t)done);
             atomic_set(&response_pending, 1);
         }
