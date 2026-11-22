@@ -64,7 +64,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout blind application
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: app
 
@@ -432,7 +432,7 @@ jobs:
 
       - name: Upload diagnostic files (not flash-ready)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: zigbee-build-diagnostics
           path: diagnostic/
@@ -529,11 +529,11 @@ jobs:
           Do not use this build unattended with a curtain attached.
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-47 UNVERIFIED experimental UF2
+      - name: Upload P3-NRF52840 v42.0-48 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: P3-NRF52840-v42-0-47-BAD-STOP-GPIO-RECOVERY-BENCH-UNVERIFIED-UF2
+          name: P3-NRF52840-v42-0-48-GPIOTE-PPI-TIMER-START-BENCH-UNVERIFIED-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
