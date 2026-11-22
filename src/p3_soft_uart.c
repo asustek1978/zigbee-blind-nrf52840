@@ -24,6 +24,7 @@
 #include <hal/nrf_timer.h>
 #include <hal/nrf_gpio.h>
 #include <hal/nrf_uarte.h>
+#include <nrfx_gppi.h>
 #include "p3_soft_uart.h"
 #include "p3_uart_watchdog.h"
 #include "p3_position_wake.h"
@@ -142,6 +143,12 @@ static uint8_t shift_byte;
 static uint8_t bit_index;
 static bool uart_prepared;
 static uint32_t uart_last_byte_ms;
+static bool p3_ppi_available;
+static bool p3_ppi_armed;
+static uint8_t p3_ppi_ch;
+static atomic_t p3_ppi_starts;
+static atomic_t p3_ppi_fallbacks;
+static atomic_t p3_ppi_late_irqs;
 
 enum p3_rx_phase {
     P3_RX_DATA,
@@ -149,6 +156,44 @@ enum p3_rx_phase {
     P3_RX_NEXT_START,
 };
 static volatile enum p3_rx_phase rx_phase;
+
+/* v42.0-48: reuse the IN event owned by Zephyr's GPIO driver.
+ * The GPIOTE channel is never reconfigured or claimed by this code.
+ * If a dedicated IN event is unavailable, keep the proven GPIO-ISR path.
+ */
+static void p3_ppi_setup(void)
+{
+    for (unsigned int i = 0; i < ARRAY_SIZE(NRF_GPIOTE->CONFIG); i++) {
+        uint32_t c = NRF_GPIOTE->CONFIG[i];
+        if (((c & GPIOTE_CONFIG_MODE_Msk) >> GPIOTE_CONFIG_MODE_Pos) != GPIOTE_CONFIG_MODE_Event ||
+            ((c & GPIOTE_CONFIG_PSEL_Msk) >> GPIOTE_CONFIG_PSEL_Pos) != P3_RX_PIN ||
+            ((c & GPIOTE_CONFIG_POLARITY_Msk) >> GPIOTE_CONFIG_POLARITY_Pos) != GPIOTE_CONFIG_POLARITY_HiToLo) continue;
+        uint8_t ch;
+        if (nrfx_gppi_channel_alloc(&ch) != NRFX_SUCCESS) return;
+        nrfx_gppi_channel_endpoints_setup(ch,
+            (uint32_t)(uintptr_t)&NRF_GPIOTE->EVENTS_IN[i],
+            (uint32_t)(uintptr_t)&NRF_TIMER3->TASKS_START);
+        p3_ppi_ch = ch;
+        p3_ppi_available = true;
+        return;
+    }
+}
+static void p3_ppi_disarm(void)
+{
+    if (p3_ppi_available && p3_ppi_armed) {
+        nrfx_gppi_channels_disable(BIT(p3_ppi_ch));
+        p3_ppi_armed = false;
+    }
+}
+static void p3_ppi_arm(void)
+{
+    if (!p3_ppi_available || p3_ppi_armed) return;
+    /* Reset the stopped timer before edge. PPI does only START. */
+    nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_CLEAR);
+    nrf_timer_cc_set(NRF_TIMER3, NRF_TIMER_CC_CHANNEL0, P3_FIRST_SAMPLE_US);
+    nrfx_gppi_channels_enable(BIT(p3_ppi_ch));
+    p3_ppi_armed = true;
+}
 
 static void p3_uart_disable(void)
 {
@@ -244,6 +289,7 @@ static void p3_hw_rx_maybe_enter(void)
     if (!atomic_cas(&active, 0, 1)) {
         return;
     }
+    p3_ppi_disarm();
     (void)gpio_pin_interrupt_configure(gpio, P3_RX_PIN, GPIO_INT_DISABLE);
     nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_STOP);
     nrf_timer_int_disable(NRF_TIMER3, NRF_TIMER_INT_COMPARE0_MASK);
@@ -338,6 +384,7 @@ static void p3_soft_uart_abort_bad_stop(void)
     rx_phase = P3_RX_DATA;
     shift_byte = 0U;
     bit_index = 0U;
+    p3_ppi_arm();
     /* Clear ownership LAST so a fresh GPIO edge cannot race our reset. */
     atomic_clear(&active);
 }
@@ -462,6 +509,7 @@ static void timer3_irq(const void *unused)
     if (uart_prepared) {
         p3_uart_disable();
     }
+    p3_ppi_arm();
     atomic_clear(&active);
 }
 
@@ -479,12 +527,27 @@ static void rx_start_irq(const struct device *port,
     bit_index = 0U;
     rx_phase = P3_RX_DATA;
     rx_origin_gpio = true; /* tag byte whose start was a GPIO edge */
-    nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_CLEAR);
-    nrf_timer_cc_set(NRF_TIMER3, NRF_TIMER_CC_CHANNEL0,
-                     P3_FIRST_SAMPLE_US);
-    nrf_timer_event_clear(NRF_TIMER3, NRF_TIMER_EVENT_COMPARE0);
+    const bool ppi_was_armed = p3_ppi_armed;
+    p3_ppi_disarm(); /* Disarm before any further falling data-bit edge. */
+    bool ppi_started = false;
+    if (ppi_was_armed) {
+        nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_CAPTURE1);
+        const uint32_t age_us = nrf_timer_cc_get(NRF_TIMER3, NRF_TIMER_CC_CHANNEL1);
+        ppi_started = age_us != 0U;
+        if (ppi_started) {
+            atomic_inc(&p3_ppi_starts);
+            if (age_us >= P3_FIRST_SAMPLE_US) atomic_inc(&p3_ppi_late_irqs);
+        }
+    }
+    if (!ppi_started) {
+        atomic_inc(&p3_ppi_fallbacks);
+        nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_CLEAR);
+        nrf_timer_cc_set(NRF_TIMER3, NRF_TIMER_CC_CHANNEL0, P3_FIRST_SAMPLE_US);
+        nrf_timer_event_clear(NRF_TIMER3, NRF_TIMER_EVENT_COMPARE0);
+        nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_START);
+    }
+    /* PPI mode already started TIMER3 at the physical edge. */
     nrf_timer_int_enable(NRF_TIMER3, NRF_TIMER_INT_COMPARE0_MASK);
-    nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_START);
     /* Account AFTER arming TIMER3 so first-byte timing stays unchanged. */
     atomic_inc(&rx_gpio_start_events);
     atomic_set(&rx_last_gpio_start_ms, (atomic_val_t)k_uptime_get_32());
@@ -634,6 +697,7 @@ static void p3_uarte_service(void)
     bit_index = 0U;
     (void)gpio_pin_interrupt_configure(gpio, P3_RX_PIN,
                                        GPIO_INT_EDGE_FALLING);
+    p3_ppi_arm();
 }
 
 int p3_soft_uart_start(void)
@@ -661,12 +725,20 @@ int p3_soft_uart_start(void)
                             NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK);
     IRQ_CONNECT(TIMER3_IRQn, 3, timer3_irq, NULL, 0);
     irq_enable(TIMER3_IRQn);
-    return gpio_pin_interrupt_configure(gpio, P3_RX_PIN,
-                                        GPIO_INT_EDGE_FALLING);
+    rc = gpio_pin_interrupt_configure(gpio, P3_RX_PIN, GPIO_INT_EDGE_FALLING);
+    if (rc != 0) return rc;
+    p3_ppi_setup();
+    p3_ppi_arm();
+    return 0;
 }
 
 void p3_soft_uart_stop(void)
 {
+    p3_ppi_disarm();
+    if (p3_ppi_available) {
+        nrfx_gppi_channel_free(p3_ppi_ch);
+        p3_ppi_available = false;
+    }
     if (atomic_get(&uart_active)) {
         NRF_UARTE0->EVENTS_RXTO = 0U;
         NRF_UARTE0->TASKS_STOPRX = 1U;
@@ -709,6 +781,11 @@ int p3_soft_uart_read(uint8_t *byte, k_timeout_t timeout)
     p3_hw_rx_maybe_enter();
     return (int)ring_buf_get(&p3_soft_ring, byte, 1U);
 }
+
+uint32_t p3_soft_uart_ppi_enabled(void) { return p3_ppi_available ? 1U : 0U; }
+uint32_t p3_soft_uart_ppi_starts(void) { return (uint32_t)atomic_get(&p3_ppi_starts); }
+uint32_t p3_soft_uart_ppi_fallbacks(void) { return (uint32_t)atomic_get(&p3_ppi_fallbacks); }
+uint32_t p3_soft_uart_ppi_late_irqs(void) { return (uint32_t)atomic_get(&p3_ppi_late_irqs); }
 
 uint32_t p3_soft_uart_framing_errors(void)
 {
