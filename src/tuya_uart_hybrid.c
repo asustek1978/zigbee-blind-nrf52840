@@ -77,6 +77,8 @@ static void p3_command_monitor_timeout_work(struct k_work *work)
     k_mutex_lock(&p3_diag_mutex, K_FOREVER);
     p3_cmd_monitor_expire(&p3_diag.command_monitor, k_uptime_get_32());
     k_mutex_unlock(&p3_diag_mutex);
+    /* Publish timeout result through existing ZBOSS update path, no UART TX. */
+    p3_zcl_schedule_sync();
 }
 K_WORK_DELAYABLE_DEFINE(p3_cmd_monitor_timeout, p3_command_monitor_timeout_work);
 
@@ -176,13 +178,24 @@ void tuya_uart_accept_report(const struct tuya_frame *frame)
         (void)tuya_foreach_report_dp(frame, p3_command_report_capture,
                                     &command_report);
     }
+    bool monitor_progress = false;
     k_mutex_lock(&p3_diag_mutex, K_FOREVER);
     if (accepted) {
+        const uint32_t report_before =
+            p3_diag.command_monitor.mcu_report_after_tx;
+        const uint32_t reached_before =
+            p3_diag.command_monitor.position_reached_reported;
+        const uint32_t stopped_before =
+            p3_diag.command_monitor.stop_reported;
         p3_cmd_monitor_mcu_report(
             &p3_diag.command_monitor,
             command_report.dp1_present, command_report.dp1,
             command_report.dp3_present, command_report.dp3,
             k_uptime_get_32());
+        monitor_progress =
+            p3_diag.command_monitor.mcu_report_after_tx != report_before ||
+            p3_diag.command_monitor.position_reached_reported != reached_before ||
+            p3_diag.command_monitor.stop_reported != stopped_before;
     }
     p3_diag.valid_frames++;
     p3_diag.last_command = frame->command;
@@ -195,7 +208,8 @@ void tuya_uart_accept_report(const struct tuya_frame *frame)
             k_uptime_get_32() - (uint32_t)atomic_get(&last_tx_ms);
     }
     k_mutex_unlock(&p3_diag_mutex);
-    if (accepted && (changes.motion || changes.position || changes.battery)) {
+    if (accepted && (changes.motion || changes.position ||
+                     changes.battery || monitor_progress)) {
         p3_zcl_schedule_sync();
     }
 }
