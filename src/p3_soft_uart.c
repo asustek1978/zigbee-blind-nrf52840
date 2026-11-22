@@ -190,6 +190,7 @@ static void p3_ppi_arm(void)
     if (!p3_ppi_available || p3_ppi_armed) return;
     /* Reset the stopped timer before edge. PPI does only START. */
     nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_CLEAR);
+    nrf_timer_event_clear(NRF_TIMER3, NRF_TIMER_EVENT_COMPARE0);
     nrf_timer_cc_set(NRF_TIMER3, NRF_TIMER_CC_CHANNEL0, P3_FIRST_SAMPLE_US);
     nrfx_gppi_channels_enable(BIT(p3_ppi_ch));
     p3_ppi_armed = true;
@@ -532,11 +533,16 @@ static void rx_start_irq(const struct device *port,
     bool ppi_started = false;
     if (ppi_was_armed) {
         nrf_timer_task_trigger(NRF_TIMER3, NRF_TIMER_TASK_CAPTURE1);
-        const uint32_t age_us = nrf_timer_cc_get(NRF_TIMER3, NRF_TIMER_CC_CHANNEL1);
-        ppi_started = age_us != 0U;
+        const uint32_t elapsed_ticks = nrf_timer_cc_get(NRF_TIMER3, NRF_TIMER_CC_CHANNEL1);
+        /* COMPARE0_CLEAR wraps TIMER3 every 156 ticks. A late IRQ must
+         * be detected from the latched compare event, not captured ticks.
+         */
+        const bool first_deadline_passed =
+            nrf_timer_event_check(NRF_TIMER3, NRF_TIMER_EVENT_COMPARE0);
+        ppi_started = elapsed_ticks != 0U || first_deadline_passed;
         if (ppi_started) {
             atomic_inc(&p3_ppi_starts);
-            if (age_us >= P3_FIRST_SAMPLE_US) atomic_inc(&p3_ppi_late_irqs);
+            if (first_deadline_passed) atomic_inc(&p3_ppi_late_irqs);
         }
     }
     if (!ppi_started) {
