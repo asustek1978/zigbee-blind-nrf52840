@@ -28,6 +28,7 @@
 #include "p3_soft_uart.h"
 #include "p3_uart_watchdog.h"
 #include "p3_position_wake.h"
+#include "p3_session_diag.h"
 
 #define P3_RX_PIN 17U
 #define P3_RING_SIZE 2048U
@@ -137,6 +138,8 @@ static atomic_t hw_direct_last_switch_ms;
 static atomic_t hw_direct_hw_errors;
 static atomic_t hw_direct_empty_dma;
 static atomic_t hw_direct_rxto_timeouts;
+/* v42.0-48 observation only: reason set by existing exit decisions. */
+static atomic_t hw_session_exit_reason;
 static bool hw_direct_saw_byte;
 static volatile bool rx_origin_gpio;
 static uint8_t shift_byte;
@@ -275,12 +278,14 @@ static bool p3_hw_rx_wanted(uint32_t now)
             if (direct) {
                 atomic_inc(&hw_direct_max_timeouts);
                 atomic_set(&hw_direct_motion_lockout, 1);
+                atomic_set(&hw_session_exit_reason, P3_SESSION_EXIT_WATCHDOG);
             }
         }
         return false;
     }
     const uint32_t stop_ms = (uint32_t)atomic_get(&hw_rx_stop_ms);
     if (p3_hw_rx_stop_guard_due(now, stop_ms, P3_HW_RX_STOP_GUARD_MS)) {
+        if (direct) atomic_set(&hw_session_exit_reason, P3_SESSION_EXIT_STOP_GUARD);
         atomic_clear(&hw_rx_requested);
         return false;
     }
@@ -339,6 +344,8 @@ static void p3_hw_rx_maybe_enter(void)
      * last received DP1 report or TX request.
      */
     atomic_set(&hw_direct_session_start_ms, (atomic_val_t)k_uptime_get_32());
+    atomic_set(&hw_session_exit_reason, P3_SESSION_EXIT_OTHER);
+    p3_session_diag_begin();
     atomic_set(&uart_active, 1);
     atomic_set(&hw_direct_active, 1);
     atomic_inc(&hw_direct_enters);
@@ -645,6 +652,7 @@ static void p3_uarte_service(void)
     } else {
         const uint32_t count = NRF_UARTE0->RXD.AMOUNT;
         if (count > 0U && count <= sizeof(p3_dma_rx)) {
+            if (direct) p3_session_diag_note_dma_bytes(count);
             uint32_t copied = ring_buf_put(&p3_soft_ring,
                                             p3_dma_rx, count);
             atomic_add(&uart_dma_bytes, (atomic_val_t)copied);
@@ -695,6 +703,11 @@ static void p3_uarte_service(void)
         return;
     }
     if (direct) {
+        uint32_t cause = (uint32_t)atomic_get(&hw_session_exit_reason);
+        if (cause == P3_SESSION_EXIT_NONE || cause > P3_SESSION_EXIT_SHUTDOWN)
+            cause = P3_SESSION_EXIT_OTHER;
+        p3_session_diag_end((enum p3_session_exit_reason)cause,
+            (uint32_t)(k_uptime_get_32() - uart_last_byte_ms));
         atomic_clear(&hw_direct_active);
         atomic_inc(&hw_direct_exits);
         atomic_set(&hw_direct_last_exit_ms, (atomic_val_t)k_uptime_get_32());
@@ -749,6 +762,11 @@ int p3_soft_uart_start(void)
 
 void p3_soft_uart_stop(void)
 {
+    if (atomic_get(&hw_direct_active)) {
+        p3_session_diag_end(P3_SESSION_EXIT_SHUTDOWN,
+            (uint32_t)(k_uptime_get_32() - uart_last_byte_ms));
+        p3_session_diag_publish_pending();
+    }
     p3_ppi_disarm();
     if (p3_ppi_available) {
         nrfx_gppi_channel_free(p3_ppi_ch);
@@ -777,6 +795,11 @@ void p3_soft_uart_stop(void)
 
 int p3_soft_uart_read(uint8_t *byte, k_timeout_t timeout)
 {
+    /* Publish only after the parser has consumed the last queued byte.
+     * The read caller parses its returned byte before invoking us again.
+     */
+    if (ring_buf_size_get(&p3_soft_ring) == 0U)
+        p3_session_diag_publish_pending();
     p3_uarte_service();
     p3_hw_rx_maybe_enter();
     if (ring_buf_get(&p3_soft_ring, byte, 1U) == 1U) {
