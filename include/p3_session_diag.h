@@ -40,6 +40,8 @@ void p3_session_diag_note_dma_bytes(uint32_t count);
 void p3_session_diag_note_valid_frame(void);
 void p3_session_diag_note_mcu_report(bool fresh_stop, bool dp3_valid, uint8_t dp3);
 void p3_session_diag_note_tx_target(uint8_t target);
+/* Queue acceptance invalidates old target confirmation before the new TX. */
+void p3_session_diag_cancel_goal(void);
 /* True only for a live session with a fresh parser-accepted target DP3.
  * A later different DP3 or newer TX target cancels readiness.
  */
