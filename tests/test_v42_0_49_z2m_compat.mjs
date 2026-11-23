@@ -5,8 +5,8 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 
-const js = fs.readFileSync('zigbee2mqtt/external_converters/p3_nrf52840.js', 'utf8');
-const mjs = fs.readFileSync('zigbee2mqtt/external_converters/p3_nrf52840.mjs', 'utf8');
+const js = fs.readFileSync(new URL('../zigbee2mqtt/external_converters/p3_nrf52840.js', import.meta.url), 'utf8');
+const mjs = fs.readFileSync(new URL('../zigbee2mqtt/external_converters/p3_nrf52840.mjs', import.meta.url), 'utf8');
 assert.equal(js, mjs, 'both deployed converter variants must match');
 
 const source = js.match(/const benchSupported = \(device\) => \{[\s\S]*?\n\};/);
