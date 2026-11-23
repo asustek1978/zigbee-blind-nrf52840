@@ -273,12 +273,20 @@ const benchSupported = (device) => {
     const match = /^42\.0-(\d+)$/.exec(device?.softwareBuildID || '');
     return match !== null && Number(match[1]) >= 48;
 };
+const goalCounterSupported = (device) => {
+    const match = /^42\.0-(\d+)$/.exec(device?.softwareBuildID || '');
+    return match !== null && Number(match[1]) >= 49;
+};
+const benchDiagnosticsFor = (device) =>
+    visibleBenchDiagnostics.filter((name) =>
+        name !== 'session_goal_silence_exits' || goalCounterSupported(device));
 const assertBenchSupported = (entity, meta) => {
     const device = meta?.device ||
         (typeof entity.getDevice === 'function' ? entity.getDevice() : undefined);
     if (!benchSupported(device)) {
-        throw new Error('P3 diagnostic is only supported on SWBuildID 42.0-48 or newer; v41.3 kitchen motors do not expose it');
+        throw new Error('P3 diagnostic requires SWBuildID >=42.0-48; v41.3 kitchen motors do not support v42 attributes');
     }
+    return device;
 };
 
 const diagnosticFromZigbee = {
@@ -302,7 +310,12 @@ const diagnosticToZigbee = {
     key: Object.keys(diagnosticAttributes),
     convertGet: async (entity, key, meta) => {
         /* Legacy 41.3 has DP13 battery support but not v42 diagnostics. */
-        if (key !== 'motor_dp_battery') assertBenchSupported(entity, meta);
+        if (key !== 'motor_dp_battery') {
+            const device = assertBenchSupported(entity, meta);
+            if (key === 'session_goal_silence_exits' && !goalCounterSupported(device)) {
+                throw new Error('P3 goal-silence counter requires SWBuildID 42.0-49');
+            }
+        }
         await entity.read('genBasic', [diagnosticAttributes[key]]);
     },
 };
@@ -310,15 +323,15 @@ const diagnosticToZigbee = {
 // A single Zigbee2MQTT GET refreshes all firmware diagnostic attributes.
 // Split reads into small ZCL frames to avoid oversized responses; do not send
 // motor commands or reset/modify any diagnostic counters.
-/* A compact manual refresh of the 26 bench fields. Unlike refresh_all,
- * this issues only 5 ZCL Basic read batches and avoids dozens of reads.
+/* Compact manual refresh of 25 (v48) or 26 (v49) bench fields.
+ * This uses 5 or 6 ZCL Basic read batches, not a full diagnostics sweep.
  * Not called automatically when an older kitchen v41.3 device joins.
  */
 const refreshBenchDiagnosticsToZigbee = {
     key: ['refresh_bench_diagnostics'],
     convertGet: async (entity, key, meta) => {
-        assertBenchSupported(entity, meta);
-        const attributes = visibleBenchDiagnostics.map((name) => diagnosticAttributes[name]);
+        const device = assertBenchSupported(entity, meta);
+        const attributes = benchDiagnosticsFor(device).map((name) => diagnosticAttributes[name]);
         const batchSize = 5;
         for (let i = 0; i < attributes.length; i += batchSize) {
             await entity.read('genBasic', attributes.slice(i, i + batchSize));
@@ -328,8 +341,10 @@ const refreshBenchDiagnosticsToZigbee = {
 const refreshAllDiagnosticsToZigbee = {
     key: ['refresh_all_diagnostics'],
     convertGet: async (entity, key, meta) => {
-        assertBenchSupported(entity, meta);
-        const attributes = Object.values(diagnosticAttributes);
+        const device = assertBenchSupported(entity, meta);
+        const attributes = Object.entries(diagnosticAttributes)
+            .filter(([name]) => name !== 'session_goal_silence_exits' || goalCounterSupported(device))
+            .map(([, id]) => id);
         const batchSize = 5;
         for (let i = 0; i < attributes.length; i += batchSize) {
             await entity.read('genBasic', attributes.slice(i, i + batchSize));
@@ -356,9 +371,11 @@ export default {
         e.cover_position(), e.battery(),
         ...(benchSupported(device) ? [
             e.numeric('refresh_bench_diagnostics', ea.STATE_GET).withDescription(
-                'Manually read 26 bench UART/PPI/session counters in 6 small Zigbee batches; no motor command'
+                goalCounterSupported(device)
+                    ? 'Manually read 26 bench UART/PPI/session counters in 6 Zigbee batches; no motor command'
+                    : 'Manually read 25 bench UART/PPI/session counters in 5 Zigbee batches; no motor command'
             ),
-            ...visibleBenchDiagnostics.map((name) =>
+            ...benchDiagnosticsFor(device).map((name) =>
                 e.numeric(name, ea.STATE_GET).withDescription(
                     diagnosticDescriptions[name] ||
                         'Read-only diagnostic from Zigbee Basic cluster'
