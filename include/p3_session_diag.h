@@ -12,7 +12,8 @@ enum p3_session_exit_reason {
     P3_SESSION_EXIT_STOP_GUARD = 1,
     P3_SESSION_EXIT_WATCHDOG = 2,
     P3_SESSION_EXIT_OTHER = 3,
-    P3_SESSION_EXIT_SHUTDOWN = 4
+    P3_SESSION_EXIT_SHUTDOWN = 4,
+    P3_SESSION_EXIT_GOAL_SILENCE = 5
 };
 
 struct p3_session_snapshot {
@@ -29,7 +30,8 @@ struct p3_session_snapshot {
     uint32_t total_sessions;
     uint32_t stop_guard_exits;
     uint32_t watchdog_exits;
-    uint32_t watchdog_goal_no_stop; /* key control population for v42.0-49 */
+    uint32_t watchdog_goal_no_stop; /* key v42.0-48 control population */
+    uint32_t goal_silence_exits;    /* v42.0-49 goal+quiet instead of watchdog */
 };
 
 /* Calls from RX owner thread, except note_tx_target from TX worker. */
@@ -38,6 +40,10 @@ void p3_session_diag_note_dma_bytes(uint32_t count);
 void p3_session_diag_note_valid_frame(void);
 void p3_session_diag_note_mcu_report(bool fresh_stop, bool dp3_valid, uint8_t dp3);
 void p3_session_diag_note_tx_target(uint8_t target);
+/* True only for a live session with a fresh parser-accepted target DP3.
+ * A later different DP3 or newer TX target cancels readiness.
+ */
+bool p3_session_diag_goal_ready(void);
 void p3_session_diag_end(enum p3_session_exit_reason reason, uint32_t silence_ms);
 void p3_session_diag_publish_pending(void);
 void p3_session_diag_get(struct p3_session_snapshot *out);
