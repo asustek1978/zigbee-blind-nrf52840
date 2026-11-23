@@ -99,6 +99,19 @@ void p3_session_diag_note_tx_target(uint8_t target)
     k_spin_unlock(&ledger_lock, key);
 }
 
+void p3_session_diag_cancel_goal(void)
+{
+    k_spinlock_key_t key = k_spin_lock(&ledger_lock);
+    if (session_active) {
+        /* A queued command can precede its actual UART TX by up to 80ms;
+         * do not exit on a target accepted before that command arrived.
+         */
+        current.goal_seen = 0U;
+        current.target = 255U;
+    }
+    k_spin_unlock(&ledger_lock, key);
+}
+
 bool p3_session_diag_goal_ready(void)
 {
     k_spinlock_key_t key = k_spin_lock(&ledger_lock);
