@@ -107,6 +107,11 @@ int main(void)
     assert(!p3_session_diag_goal_ready());
     p3_session_diag_note_mcu_report(false, true, 100U);
     assert(p3_session_diag_goal_ready());
+    p3_session_diag_cancel_goal();
+    assert(!p3_session_diag_goal_ready());
+    p3_session_diag_note_tx_target(100U);
+    p3_session_diag_note_mcu_report(false, true, 100U);
+    assert(p3_session_diag_goal_ready());
     p3_session_diag_end(P3_SESSION_EXIT_GOAL_SILENCE, 3002U);
     assert(!p3_session_diag_goal_ready());
     p3_session_diag_publish_pending();
