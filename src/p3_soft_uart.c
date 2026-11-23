@@ -29,6 +29,7 @@
 #include "p3_uart_watchdog.h"
 #include "p3_position_wake.h"
 #include "p3_session_diag.h"
+#include "p3_goal_exit.h"
 
 #define P3_RX_PIN 17U
 #define P3_RING_SIZE 2048U
@@ -264,10 +265,10 @@ static void p3_uart_warmup(void)
     }
 }
 
-/* A fresh accepted Zigbee motor command or MCU DP1=OPEN/CLOSE activates
- * direct UARTE RX. Release is allowed only after a NEW verified MCU STOP
- * plus guard, or a hard 120 s power watchdog (recorded separately).
- * All operations here are atomic; never touch Nordic peripherals elsewhere.
+/* A fresh accepted motor command or MCU motion transition activates UARTE.
+ * v42.0-49 adds a third bounded exit: fresh DP3 target + 3 s UART silence.
+ * Original STOP guard and absolute 120-second watchdog remain unchanged.
+ * Mode switching stays in the RX owner thread; no motor commands are sent.
  */
 static bool p3_hw_rx_wanted(uint32_t now)
 {
@@ -294,6 +295,19 @@ static bool p3_hw_rx_wanted(uint32_t now)
     const uint32_t stop_ms = (uint32_t)atomic_get(&hw_rx_stop_ms);
     if (p3_hw_rx_stop_guard_due(now, stop_ms, P3_HW_RX_STOP_GUARD_MS)) {
         if (direct) atomic_set(&hw_session_exit_reason, P3_SESSION_EXIT_STOP_GUARD);
+        atomic_clear(&hw_rx_requested);
+        return false;
+    }
+    /* Only release AFTER the RX parser accepted a complete fresh DP3=target
+     * frame and consumed the ring; wait for 3 seconds without new RXDRDY.
+     * END RX is handled first; do not exit on a full EasyDMA buffer.
+     * This check is never active for pre-arm or software idle reception.
+     */
+    if (direct && NRF_UARTE0->EVENTS_ENDRX == 0U &&
+        p3_goal_silence_due(p3_session_diag_goal_ready(),
+                            (uint32_t)(now - uart_last_byte_ms),
+                            ring_buf_size_get(&p3_soft_ring) == 0U)) {
+        atomic_set(&hw_session_exit_reason, P3_SESSION_EXIT_GOAL_SILENCE);
         atomic_clear(&hw_rx_requested);
         return false;
     }
@@ -712,7 +726,7 @@ static void p3_uarte_service(void)
     }
     if (direct) {
         uint32_t cause = (uint32_t)atomic_get(&hw_session_exit_reason);
-        if (cause == P3_SESSION_EXIT_NONE || cause > P3_SESSION_EXIT_SHUTDOWN)
+        if (cause == P3_SESSION_EXIT_NONE || cause > P3_SESSION_EXIT_GOAL_SILENCE)
             cause = P3_SESSION_EXIT_OTHER;
         p3_session_diag_end((enum p3_session_exit_reason)cause,
             (uint32_t)(k_uptime_get_32() - uart_last_byte_ms));
