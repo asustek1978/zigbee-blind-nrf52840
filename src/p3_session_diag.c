@@ -19,6 +19,7 @@ static uint32_t total_sessions;
 static uint32_t stop_guard_exits;
 static uint32_t watchdog_exits;
 static uint32_t watchdog_goal_no_stop;
+static uint32_t goal_silence_exits;
 
 static void publish_locked(void)
 {
@@ -26,6 +27,7 @@ static void publish_locked(void)
     published = pending;
     total_sessions++;
     if (pending.reason == P3_SESSION_EXIT_STOP_GUARD) stop_guard_exits++;
+    if (pending.reason == P3_SESSION_EXIT_GOAL_SILENCE) goal_silence_exits++;
     if (pending.reason == P3_SESSION_EXIT_WATCHDOG) {
         watchdog_exits++;
         if (pending.goal_seen && !pending.stop_seen) watchdog_goal_no_stop++;
@@ -97,6 +99,19 @@ void p3_session_diag_note_tx_target(uint8_t target)
     k_spin_unlock(&ledger_lock, key);
 }
 
+bool p3_session_diag_goal_ready(void)
+{
+    k_spinlock_key_t key = k_spin_lock(&ledger_lock);
+    /* The parser has completed a valid MCU frame; a report from a prior
+     * session, a different DP3 or a superseded TX cannot allow exit.
+     */
+    bool ready = session_active && current.valid_frames > 0U &&
+        current.goal_seen != 0U && current.target <= 100U &&
+        current.last_dp3 == current.target;
+    k_spin_unlock(&ledger_lock, key);
+    return ready;
+}
+
 void p3_session_diag_end(enum p3_session_exit_reason reason, uint32_t silence_ms)
 {
     k_spinlock_key_t key = k_spin_lock(&ledger_lock);
@@ -128,5 +143,6 @@ void p3_session_diag_get(struct p3_session_snapshot *out)
     out->stop_guard_exits = stop_guard_exits;
     out->watchdog_exits = watchdog_exits;
     out->watchdog_goal_no_stop = watchdog_goal_no_stop;
+    out->goal_silence_exits = goal_silence_exits;
     k_spin_unlock(&ledger_lock, key);
 }
