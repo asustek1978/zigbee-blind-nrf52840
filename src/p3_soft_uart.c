@@ -925,6 +925,10 @@ void p3_soft_uart_note_prearm_timeout(void)
  */
 void p3_soft_uart_note_explicit_motor_command(void)
 {
+    /* Called only after the command queue accepts a new motor action.
+     * Cancel the prior DP3 goal before waiting for the new physical TX.
+     */
+    p3_session_diag_cancel_goal();
     atomic_clear(&p3_position_wake_latched);
 }
 
