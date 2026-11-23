@@ -88,5 +88,32 @@ int main(void)
     assert(s.id == 5U && s.stop_seen == 1U && s.goal_seen == 0U);
     assert(s.target == 255U && s.total_sessions == 5U);
     assert(s.stop_guard_exits == 2U);
+
+    /* v42.0-49: only a valid, live, latest-target DP3 can enable exit. */
+    assert(!p3_session_diag_goal_ready());
+    p3_session_diag_begin();
+    assert(!p3_session_diag_goal_ready());
+    p3_session_diag_note_tx_target(0U);
+    p3_session_diag_note_valid_frame();
+    p3_session_diag_note_mcu_report(false, true, 8U);
+    assert(!p3_session_diag_goal_ready());
+    p3_session_diag_note_mcu_report(false, true, 0U);
+    assert(p3_session_diag_goal_ready());
+    p3_session_diag_note_mcu_report(false, true, 2U);
+    assert(!p3_session_diag_goal_ready());
+    p3_session_diag_note_mcu_report(false, true, 0U);
+    assert(p3_session_diag_goal_ready());
+    p3_session_diag_note_tx_target(100U);
+    assert(!p3_session_diag_goal_ready());
+    p3_session_diag_note_mcu_report(false, true, 100U);
+    assert(p3_session_diag_goal_ready());
+    p3_session_diag_end(P3_SESSION_EXIT_GOAL_SILENCE, 3002U);
+    assert(!p3_session_diag_goal_ready());
+    p3_session_diag_publish_pending();
+    s = snap();
+    assert(s.id == 6U && s.reason == P3_SESSION_EXIT_GOAL_SILENCE);
+    assert(s.target == 100U && s.last_dp3 == 100U && s.goal_seen == 1U);
+    assert(s.goal_silence_exits == 1U && s.watchdog_exits == 3U);
+    assert(s.stop_guard_exits == 2U && s.total_sessions == 6U);
     return 0;
 }
