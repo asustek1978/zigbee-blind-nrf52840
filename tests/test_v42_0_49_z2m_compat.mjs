@@ -19,6 +19,25 @@ assert.equal(supported({softwareBuildID: '42.0-49'}), true);
 assert.equal(supported({softwareBuildID: '42.0-50'}), true);
 assert.equal(supported({}), false);
 assert.equal(supported(undefined), false);
+
+const goalSource = js.match(/const goalCounterSupported = \(device\) => \{[\s\S]*?\n\};/);
+assert.ok(goalSource, 'goal counter version check must exist');
+const goalSupported = vm.runInNewContext(goalSource[0] + '\ngoalCounterSupported;', {});
+assert.equal(goalSupported({softwareBuildID: '41.3'}), false);
+assert.equal(goalSupported({softwareBuildID: '42.0-48'}), false);
+assert.equal(goalSupported({softwareBuildID: '42.0-49'}), true);
+assert.equal(goalSupported({softwareBuildID: '42.0-50'}), true);
+
+const fieldsSource = js.match(/const visibleBenchDiagnostics = \[[\s\S]*?\n\];/);
+const selectionSource = js.match(/const benchDiagnosticsFor = \(device\) =>[\s\S]*?;\n/);
+assert.ok(fieldsSource && selectionSource);
+const fieldSelection = vm.runInNewContext(
+    [fieldsSource[0], goalSource[0], selectionSource[0], 'benchDiagnosticsFor;'].join('\n'), {});
+assert.equal(fieldSelection({softwareBuildID: '42.0-48'}).length, 25);
+assert.equal(fieldSelection({softwareBuildID: '42.0-49'}).length, 26);
+assert.ok(!fieldSelection({softwareBuildID: '42.0-48'}).includes('session_goal_silence_exits'));
+assert.ok(fieldSelection({softwareBuildID: '42.0-49'}).includes('session_goal_silence_exits'));
+
 assert.match(js, /exposes: \(device\) =>/);
 assert.match(js, /benchSupported\(device\) \? \[/);
 assert.match(js, /assertBenchSupported\(entity, meta\);/);
