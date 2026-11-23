@@ -121,6 +121,7 @@ const diagnosticAttributes = {
     session_stop_guard_exits: 0xF196,
     session_watchdog_exits: 0xF197,
     session_watchdog_goal_no_stop: 0xF198,
+    session_goal_silence_exits: 0xF199,
     tuya_frames_ok: 0xF133,
     tuya_frames_rejected: 0xF134,
     stress_rx_bytes: 0xF12C,
@@ -133,7 +134,7 @@ const diagnosticAttributes = {
     diag_last_command: 0xF105,
     diag_last_format: 0xF106,
 };
-/* v42.0-48 compact bench UI: 25 read-only counters needed to compare
+/* v42.0-49 compact bench UI: 26 read-only counters needed to compare
  * low-power RX, PPI reliability, and the DP3-without-STOP watchdog issue.
  * The complete firmware attribute map stays available for manual GET and
  * archived diagnostics; do not remove it or the working v41.x mapping.
@@ -164,6 +165,7 @@ const visibleBenchDiagnostics = [
     'session_total',
     'session_watchdog_exits',
     'session_watchdog_goal_no_stop',
+    'session_goal_silence_exits',
 ];
 
 const diagnosticDescriptions = {
@@ -254,13 +256,31 @@ const diagnosticDescriptions = {
     session_last_target: 'Last successfully transmitted movement target 0..100 during session; 255=no target',
     session_last_dp3: 'Last valid MCU DP3 0..100 observed during session; 255=none',
     session_last_silence_ms: 'Elapsed ms since last RXDRDY observed at session exit; not guaranteed continuous wire silence',
-    session_last_reason: 'Last session exit cause: 1=confirmed STOP guard, 2=120-second watchdog, 3=other, 4=shutdown; 0=none',
+    session_last_reason: 'Last session exit cause: 1=STOP guard, 2=watchdog, 3=other, 4=shutdown, 5=fresh DP3 target + 3s silence',
     session_active_id: 'Current full-UARTE0 session ID; 0 when no session active',
     session_total: 'Total completed sessions published since boot',
     session_stop_guard_exits: 'Cumulative full-UARTE0 exits after confirmed fresh DP1=STOP guard',
     session_watchdog_exits: 'Cumulative full-UARTE0 exits after 120-second watchdog',
     session_watchdog_goal_no_stop: 'Cumulative watchdog exits with DP3 matching transmitted target but no accepted DP1=STOP',
+    session_goal_silence_exits: 'Cumulative hardware RX exits after a fresh validated target DP3 and 3 seconds without UART bytes',
 };
+/* Zigbee2MQTT loads ONE converter for all P3-NRF52840 devices.
+ * Older kitchen motors have SWBuildID=41.3 and do NOT implement v42 Basic
+ * attributes. Detect per-device firmware, not model name or IEEE address.
+ * If SWBuildID is unknown, default to the legacy/minimal UI.
+ */
+const benchSupported = (device) => {
+    const match = /^42\\.0-(\\d+)$/.exec(device?.softwareBuildID || '');
+    return match !== null && Number(match[1]) >= 48;
+};
+const assertBenchSupported = (entity, meta) => {
+    const device = meta?.device ||
+        (typeof entity.getDevice === 'function' ? entity.getDevice() : undefined);
+    if (!benchSupported(device)) {
+        throw new Error('P3 diagnostic is only supported on SWBuildID 42.0-48 or newer; v41.3 kitchen motors do not expose it');
+    }
+};
+
 const diagnosticFromZigbee = {
     cluster: 'genBasic',
     type: ['readResponse', 'attributeReport'],
@@ -280,7 +300,9 @@ const diagnosticFromZigbee = {
 };
 const diagnosticToZigbee = {
     key: Object.keys(diagnosticAttributes),
-    convertGet: async (entity, key) => {
+    convertGet: async (entity, key, meta) => {
+        /* Legacy 41.3 has DP13 battery support but not v42 diagnostics. */
+        if (key !== 'motor_dp_battery') assertBenchSupported(entity, meta);
         await entity.read('genBasic', [diagnosticAttributes[key]]);
     },
 };
@@ -288,13 +310,14 @@ const diagnosticToZigbee = {
 // A single Zigbee2MQTT GET refreshes all firmware diagnostic attributes.
 // Split reads into small ZCL frames to avoid oversized responses; do not send
 // motor commands or reset/modify any diagnostic counters.
-/* A compact manual refresh of the 25 bench fields. Unlike refresh_all,
+/* A compact manual refresh of the 26 bench fields. Unlike refresh_all,
  * this issues only 5 ZCL Basic read batches and avoids dozens of reads.
  * Not called automatically when an older kitchen v41.3 device joins.
  */
 const refreshBenchDiagnosticsToZigbee = {
     key: ['refresh_bench_diagnostics'],
-    convertGet: async (entity) => {
+    convertGet: async (entity, key, meta) => {
+        assertBenchSupported(entity, meta);
         const attributes = visibleBenchDiagnostics.map((name) => diagnosticAttributes[name]);
         const batchSize = 5;
         for (let i = 0; i < attributes.length; i += batchSize) {
@@ -304,7 +327,8 @@ const refreshBenchDiagnosticsToZigbee = {
 };
 const refreshAllDiagnosticsToZigbee = {
     key: ['refresh_all_diagnostics'],
-    convertGet: async (entity) => {
+    convertGet: async (entity, key, meta) => {
+        assertBenchSupported(entity, meta);
         const attributes = Object.values(diagnosticAttributes);
         const batchSize = 5;
         for (let i = 0; i < attributes.length; i += batchSize) {
@@ -322,19 +346,24 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v42.0-48 GPIOTE/PPI TIMER3 edge-start bench; motor logic unchanged; battery path unverified; bench only',
+    description: 'P3 nRF52840 v41.3-compatible / v42.0-49 goal-silence exit bench; battery path unverified',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee, refreshBenchDiagnosticsToZigbee, refreshAllDiagnosticsToZigbee, batteryToZigbee],
-    exposes: [
+    /* Device-scoped exposures: 41.3 gets cover+battery only; v42.0-48+
+     * gets the bench controls. Never offer unknown ZCL IDs on 41.3.
+     */
+    exposes: (device) => [
         e.cover_position(), e.battery(),
-        e.numeric('refresh_bench_diagnostics', ea.STATE_GET).withDescription(
-            'Manually read 25 bench UART/PPI/session counters in 5 small Zigbee batches; no motor command'
-        ),
-        ...visibleBenchDiagnostics.map((name) =>
-            e.numeric(name, ea.STATE_GET).withDescription(
-                diagnosticDescriptions[name] ||
-                    'Read-only diagnostic from Zigbee Basic cluster; first4/next4 are little-endian packed bytes'
-            )),
+        ...(benchSupported(device) ? [
+            e.numeric('refresh_bench_diagnostics', ea.STATE_GET).withDescription(
+                'Manually read 26 bench UART/PPI/session counters in 6 small Zigbee batches; no motor command'
+            ),
+            ...visibleBenchDiagnostics.map((name) =>
+                e.numeric(name, ea.STATE_GET).withDescription(
+                    diagnosticDescriptions[name] ||
+                        'Read-only diagnostic from Zigbee Basic cluster'
+                )),
+        ] : []),
     ],
     endpoint: () => ({default: 10}),
     configure: async (device, coordinatorEndpoint) => {
