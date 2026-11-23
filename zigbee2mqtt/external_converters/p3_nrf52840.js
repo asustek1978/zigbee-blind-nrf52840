@@ -270,7 +270,7 @@ const diagnosticDescriptions = {
  * If SWBuildID is unknown, default to the legacy/minimal UI.
  */
 const benchSupported = (device) => {
-    const match = /^42\\.0-(\\d+)$/.exec(device?.softwareBuildID || '');
+    const match = /^42\.0-(\d+)$/.exec(device?.softwareBuildID || '');
     return match !== null && Number(match[1]) >= 48;
 };
 const assertBenchSupported = (entity, meta) => {
