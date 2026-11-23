@@ -212,6 +212,7 @@
 #define P3_SESSION_STOP_EXITS 0xF196U
 #define P3_SESSION_WATCHDOG_EXITS 0xF197U
 #define P3_SESSION_WATCHDOG_GOAL_NO_STOP 0xF198U
+#define P3_SESSION_GOAL_SILENCE_EXITS 0xF199U
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -368,6 +369,7 @@ struct blind_device_context {
     zb_uint32_t session_stop_guard_exits;
     zb_uint32_t session_watchdog_exits;
     zb_uint32_t session_watchdog_goal_no_stop;
+    zb_uint32_t session_goal_silence_exits;
     zb_uint8_t uart_test_phase;
     zb_uint32_t diag_rx_after_tx_ms;
     zb_uint32_t diag_valid_frames;
@@ -395,7 +397,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '8'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '9'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -705,6 +707,7 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_TOTAL, &blind_ctx.session_total, ZB_ZCL_ATTR_T
 ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_STOP_EXITS, &blind_ctx.session_stop_guard_exits, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_WATCHDOG_EXITS, &blind_ctx.session_watchdog_exits, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_WATCHDOG_GOAL_NO_STOP, &blind_ctx.session_watchdog_goal_no_stop, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_GOAL_SILENCE_EXITS, &blind_ctx.session_goal_silence_exits, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -1472,6 +1475,7 @@ int main(void)
             blind_ctx.session_stop_guard_exits = session_stats.stop_guard_exits;
             blind_ctx.session_watchdog_exits = session_stats.watchdog_exits;
             blind_ctx.session_watchdog_goal_no_stop = session_stats.watchdog_goal_no_stop;
+            blind_ctx.session_goal_silence_exits = session_stats.goal_silence_exits;
             blind_ctx.rx_error_count = blind_ctx.rx_framing_errors +
                                        blind_ctx.rx_ring_overflows +
                                        p3_soft_uart_hardware_errors() +
