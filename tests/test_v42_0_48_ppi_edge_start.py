@@ -39,7 +39,7 @@ class PpiStartSourceContract(unittest.TestCase):
         self.assertIn("P3_RX_PIN 17U", RX)
 
     def test_version_and_diagnostics(self):
-        self.assertIn("'4', '2', '.', '0', '-', '4', '8'", MAIN)
+        self.assertIn("'4', '2', '.', '0', '-', '4', '9'", MAIN)
         for name, attr in [
             ("ppi_enabled", "0xF187"),
             ("ppi_starts", "0xF188"),
