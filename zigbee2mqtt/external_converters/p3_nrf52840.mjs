@@ -134,7 +134,7 @@ const diagnosticAttributes = {
     diag_last_command: 0xF105,
     diag_last_format: 0xF106,
 };
-/* v42.0-49 compact bench UI: 26 read-only counters needed to compare
+/* v42.0-49 compact bench UI: 29 read-only power/UART/PPI/session fields needed to compare
  * low-power RX, PPI reliability, and the DP3-without-STOP watchdog issue.
  * The complete firmware attribute map stays available for manual GET and
  * archived diagnostics; do not remove it or the working v41.x mapping.
@@ -149,6 +149,10 @@ const visibleBenchDiagnostics = [
     'hw_direct_active',
     'hw_direct_enters',
     'hw_direct_max_timeouts',
+    /* SAADC supply diagnostics; VDDH is NOT confirmed as battery voltage. */
+    'saadc_vddh_mv',
+    'saadc_vdd_mv',
+    'saadc_valid_mask',
     'ppi_enabled',
     'ppi_starts',
     'ppi_fallbacks',
@@ -323,8 +327,8 @@ const diagnosticToZigbee = {
 // A single Zigbee2MQTT GET refreshes all firmware diagnostic attributes.
 // Split reads into small ZCL frames to avoid oversized responses; do not send
 // motor commands or reset/modify any diagnostic counters.
-/* Compact manual refresh of 25 (v48) or 26 (v49) bench fields.
- * This uses 5 or 6 ZCL Basic read batches, not a full diagnostics sweep.
+/* Compact manual refresh of 28 (v48) or 29 (v49) bench fields.
+ * This uses 6 ZCL Basic read batches, not a full diagnostics sweep.
  * Not called automatically when an older kitchen v41.3 device joins.
  */
 const refreshBenchDiagnosticsToZigbee = {
@@ -372,14 +376,17 @@ export default {
         ...(benchSupported(device) ? [
             e.numeric('refresh_bench_diagnostics', ea.STATE_GET).withDescription(
                 goalCounterSupported(device)
-                    ? 'Manually read 26 bench UART/PPI/session counters in 6 Zigbee batches; no motor command'
-                    : 'Manually read 25 bench UART/PPI/session counters in 5 Zigbee batches; no motor command'
+                    ? 'Manually read 29 power/UART/PPI/session counters in 6 Zigbee batches; no motor command'
+                    : 'Manually read 28 power/UART/PPI/session counters in 6 Zigbee batches; no motor command'
             ),
-            ...benchDiagnosticsFor(device).map((name) =>
-                e.numeric(name, ea.STATE_GET).withDescription(
+            ...benchDiagnosticsFor(device).map((name) => {
+                const expose = e.numeric(name, ea.STATE_GET).withDescription(
                     diagnosticDescriptions[name] ||
                         'Read-only diagnostic from Zigbee Basic cluster'
-                )),
+                );
+                return (name === 'saadc_vddh_mv' || name === 'saadc_vdd_mv')
+                    ? expose.withUnit('mV') : expose;
+            }),
         ] : []),
     ],
     endpoint: () => ({default: 10}),
