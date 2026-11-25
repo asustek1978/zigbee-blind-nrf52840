@@ -33,10 +33,18 @@ const selectionSource = js.match(/const benchDiagnosticsFor = \(device\) =>[\s\S
 assert.ok(fieldsSource && selectionSource);
 const fieldSelection = vm.runInNewContext(
     [fieldsSource[0], goalSource[0], selectionSource[0], 'benchDiagnosticsFor;'].join('\n'), {});
-assert.equal(fieldSelection({softwareBuildID: '42.0-48'}).length, 25);
-assert.equal(fieldSelection({softwareBuildID: '42.0-49'}).length, 26);
+assert.equal(fieldSelection({softwareBuildID: '42.0-48'}).length, 28);
+assert.equal(fieldSelection({softwareBuildID: '42.0-49'}).length, 29);
 assert.ok(!fieldSelection({softwareBuildID: '42.0-48'}).includes('session_goal_silence_exits'));
 assert.ok(fieldSelection({softwareBuildID: '42.0-49'}).includes('session_goal_silence_exits'));
+for (const version of ['42.0-48', '42.0-49']) {
+    const fields = fieldSelection({softwareBuildID: version});
+    for (const field of ['saadc_vddh_mv', 'saadc_vdd_mv', 'saadc_valid_mask']) {
+        assert.ok(fields.includes(field), `${version} should expose ${field}`);
+    }
+}
+assert.match(js, /expose\.withUnit\('mV'\)/);
+assert.match(js, /NOT verified as battery voltage on HW-954/);
 
 assert.match(js, /exposes: \(device\) =>/);
 assert.match(js, /benchSupported\(device\) \? \[/);
