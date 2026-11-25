@@ -134,7 +134,7 @@ const diagnosticAttributes = {
     diag_last_command: 0xF105,
     diag_last_format: 0xF106,
 };
-/* v42.0-49 compact bench UI: 29 read-only power/UART/PPI/session fields needed to compare
+/* v42.0-49 compact bench UI: 30 read-only power/UART/PPI/session fields needed to compare
  * low-power RX, PPI reliability, and the DP3-without-STOP watchdog issue.
  * The complete firmware attribute map stays available for manual GET and
  * archived diagnostics; do not remove it or the working v41.x mapping.
@@ -167,6 +167,7 @@ const visibleBenchDiagnostics = [
     'session_last_silence_ms',
     'session_last_reason',
     'session_total',
+    'session_stop_guard_exits',
     'session_watchdog_exits',
     'session_watchdog_goal_no_stop',
     'session_goal_silence_exits',
@@ -327,7 +328,7 @@ const diagnosticToZigbee = {
 // A single Zigbee2MQTT GET refreshes all firmware diagnostic attributes.
 // Split reads into small ZCL frames to avoid oversized responses; do not send
 // motor commands or reset/modify any diagnostic counters.
-/* Compact manual refresh of 28 (v48) or 29 (v49) bench fields.
+/* Compact manual refresh of 29 (v48) or 30 (v49) bench fields.
  * This uses 6 ZCL Basic read batches, not a full diagnostics sweep.
  * Not called automatically when an older kitchen v41.3 device joins.
  */
@@ -376,8 +377,8 @@ export default {
         ...(benchSupported(device) ? [
             e.numeric('refresh_bench_diagnostics', ea.STATE_GET).withDescription(
                 goalCounterSupported(device)
-                    ? 'Manually read 29 power/UART/PPI/session counters in 6 Zigbee batches; no motor command'
-                    : 'Manually read 28 power/UART/PPI/session counters in 6 Zigbee batches; no motor command'
+                    ? 'Manually read 30 power/UART/PPI/session counters in 6 Zigbee batches; no motor command'
+                    : 'Manually read 29 power/UART/PPI/session counters in 6 Zigbee batches; no motor command'
             ),
             ...benchDiagnosticsFor(device).map((name) => {
                 const expose = e.numeric(name, ea.STATE_GET).withDescription(
