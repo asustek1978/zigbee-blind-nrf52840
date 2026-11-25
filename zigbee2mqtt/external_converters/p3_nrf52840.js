@@ -134,7 +134,7 @@ const diagnosticAttributes = {
     diag_last_command: 0xF105,
     diag_last_format: 0xF106,
 };
-/* v42.0-49 compact bench UI: 30 read-only power/UART/PPI/session fields needed to compare
+/* v42.0-49 compact bench UI: 46 read-only power/UART/PPI/session/command fields needed to compare
  * low-power RX, PPI reliability, and the DP3-without-STOP watchdog issue.
  * The complete firmware attribute map stays available for manual GET and
  * archived diagnostics; do not remove it or the working v41.x mapping.
@@ -146,13 +146,22 @@ const visibleBenchDiagnostics = [
     'rx_framing_errors',
     'rx_ring_overflows',
     'rx_bad_stop_post_exit_30s',
+    /* At-rest UART wake classification, DMA and hardware error counts. */
+    'rx_gpio_starts_reported_idle',
+    'uart_handoff_errors',
+    'uart_hardware_errors',
     'hw_direct_active',
     'hw_direct_enters',
+    'hw_direct_exits',
+    'hw_direct_prearm_timeouts',
     'hw_direct_max_timeouts',
     /* SAADC supply diagnostics; VDDH is NOT confirmed as battery voltage. */
     'saadc_vddh_mv',
     'saadc_vdd_mv',
     'saadc_valid_mask',
+    'saadc_samples',
+    'saadc_last_ms',
+    'saadc_last_error',
     'ppi_enabled',
     'ppi_starts',
     'ppi_fallbacks',
@@ -166,11 +175,20 @@ const visibleBenchDiagnostics = [
     'session_last_dp3',
     'session_last_silence_ms',
     'session_last_reason',
+    'session_active_id',
     'session_total',
     'session_stop_guard_exits',
     'session_watchdog_exits',
     'session_watchdog_goal_no_stop',
     'session_goal_silence_exits',
+    /* TX/MCU reporting monitors for the 20-command / 48-hour run. */
+    'cmd_queued',
+    'cmd_tx_ok',
+    'cmd_tx_failed',
+    'cmd_position_reported',
+    'cmd_stop_reported',
+    'cmd_timeout_no_report',
+    'cmd_timeout_no_target',
 ];
 
 const diagnosticDescriptions = {
@@ -328,8 +346,8 @@ const diagnosticToZigbee = {
 // A single Zigbee2MQTT GET refreshes all firmware diagnostic attributes.
 // Split reads into small ZCL frames to avoid oversized responses; do not send
 // motor commands or reset/modify any diagnostic counters.
-/* Compact manual refresh of 29 (v48) or 30 (v49) bench fields.
- * This uses 6 ZCL Basic read batches, not a full diagnostics sweep.
+/* Manual refresh of 45 (v48) or 46 (v49) power, RX, session and command fields.
+ * This uses 9 or 10 small Zigbee Basic batches; no unsolicited polling.
  * Not called automatically when an older kitchen v41.3 device joins.
  */
 const refreshBenchDiagnosticsToZigbee = {
@@ -377,8 +395,8 @@ export default {
         ...(benchSupported(device) ? [
             e.numeric('refresh_bench_diagnostics', ea.STATE_GET).withDescription(
                 goalCounterSupported(device)
-                    ? 'Manually read 30 power/UART/PPI/session counters in 6 Zigbee batches; no motor command'
-                    : 'Manually read 29 power/UART/PPI/session counters in 6 Zigbee batches; no motor command'
+                    ? 'Manually read 46 power/UART/PPI/session/command counters in 10 Zigbee batches; no motor command'
+                    : 'Manually read 45 power/UART/PPI/session/command counters in 9 Zigbee batches; no motor command'
             ),
             ...benchDiagnosticsFor(device).map((name) => {
                 const expose = e.numeric(name, ea.STATE_GET).withDescription(
