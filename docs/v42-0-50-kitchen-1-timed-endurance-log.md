@@ -63,6 +63,36 @@
 - Battery runtime ends when the battery is too low to operate the
   motor normally or safely, not solely when DP13 reaches zero.
 
+## Checkpoint 1 — approximately +30 minutes device uptime
+
+User supplied the following fresh Zigbee2MQTT `Refresh bench diagnostics` snapshot
+after the baseline. This is +1,800,009 ms (30 min) in `saadc_last_ms`;
+the wall-clock sample time and actual charger-disconnection time were not
+independently confirmed. No new multimeter reading was taken.
+
+| Parameter | Baseline | Checkpoint 1 | Change |
+|---|---:|---:|---:|
+| DP13 battery | 100% | 100% | 0 pp |
+| Cover position | 20% | 20% | unchanged |
+| Raw SAADC VDDH | 3870 mV | 3870 mV | 0 mV |
+| Displayed v50 board-#3 calibration | 3973 mV | 3973 mV | unchanged, INVALID for #1 |
+| **Offline estimated board-#1 input (RAW+15)** | **3885 mV** | **3885 mV** | **0 mV** |
+| SAADC samples | 39 | 42 | +3 |
+| SAADC last uptime | 23,430,118 ms | 25,230,127 ms | +1,800,009 ms |
+| SAADC valid mask / error | 3 / 0 | 3 / 0 | unchanged |
+| Tuya frames OK / rejected | 888 / 0 | 888 / 0 | no new UART frames |
+| HW direct enters / exits / active | 9 / 9 / 0 | 9 / 9 / 0 | unchanged |
+| Session total | 9 | 9 | unchanged |
+| STOP / goal-silence / watchdog exits | 5 / 2 / 2 | 5 / 2 / 2 | no new watchdog |
+| PPI starts / fallbacks / late IRQs | 287 / 0 / 0 | 287 / 0 / 0 | unchanged |
+| UART framing / overflow / hardware errors | 0 / 0 / 0 | 0 / 0 / 0 | unchanged |
+| Commands TX OK / failed | 14 / 0 | 14 / 0 | unchanged |
+| Linkquality | 142 | 142 | unchanged |
+
+Interpretation: stable short idle snapshot and fresh SAADC measurements,
+not an estimate of current draw or long-term runtime. Firmware remains
+v42.0-50 and **no firmware calibration constant was changed**.
+
 ## Calibration caveat
 
 - #3 reference coefficient is 3598/3505 (~+2.65%). The same coefficient
