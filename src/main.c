@@ -213,6 +213,8 @@
 #define P3_SESSION_WATCHDOG_EXITS 0xF197U
 #define P3_SESSION_WATCHDOG_GOAL_NO_STOP 0xF198U
 #define P3_SESSION_GOAL_SILENCE_EXITS 0xF199U
+/* v42.0-50: software-only input-rail estimate from SAADC VDDH; NOT BAT+. */
+#define P3_SAADC_VDDH_CALIBRATED_MV 0xF19AU
 
 LOG_MODULE_REGISTER(zigbee_blind, LOG_LEVEL_INF);
 
@@ -323,6 +325,7 @@ struct blind_device_context {
     zb_uint32_t hw_direct_session_start_ms;
     zb_uint32_t hw_direct_motion_lockout;
     zb_uint32_t saadc_vddh_mv;
+    zb_uint32_t saadc_vddh_calibrated_mv;
     zb_uint32_t saadc_vdd_mv;
     zb_uint32_t saadc_valid_mask;
     zb_uint32_t saadc_samples;
@@ -397,7 +400,7 @@ static struct blind_device_context blind_ctx;
 static zb_uint8_t blind_manufacturer[] = {8, 'L','o','c','a','l','D','I','Y'};
 static zb_uint8_t blind_model[] = {11, 'P','3','-','N','R','F','5','2','8','4','0'};
 /* ZCL Basic SWBuildID (0x4000), length-prefixed ZCL character string. */
-static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '9'};
+static zb_uint8_t blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '5', '0'};
 static atomic_t zigbee_started;
 static atomic_t p3_update_pending;
 /* Local button counters must be declared before Zigbee attribute refresh. */
@@ -708,6 +711,7 @@ ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_STOP_EXITS, &blind_ctx.session_stop_guard_exit
 ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_WATCHDOG_EXITS, &blind_ctx.session_watchdog_exits, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_WATCHDOG_GOAL_NO_STOP, &blind_ctx.session_watchdog_goal_no_stop, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_SET_ATTR_DESC_M(P3_SESSION_GOAL_SILENCE_EXITS, &blind_ctx.session_goal_silence_exits, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+ZB_ZCL_SET_ATTR_DESC_M(P3_SAADC_VDDH_CALIBRATED_MV, &blind_ctx.saadc_vddh_calibrated_mv, ZB_ZCL_ATTR_TYPE_U32, ZB_ZCL_ATTR_ACCESS_READ_ONLY)
 ZB_ZCL_FINISH_DECLARE_ATTRIB_LIST;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
@@ -1441,6 +1445,7 @@ int main(void)
             blind_ctx.hw_direct_session_start_ms = p3_soft_uart_hw_direct_session_start_ms();
             blind_ctx.hw_direct_motion_lockout = p3_soft_uart_hw_direct_motion_lockout();
             blind_ctx.saadc_vddh_mv = p3_power_diag_vddh_mv();
+            blind_ctx.saadc_vddh_calibrated_mv = p3_power_diag_vddh_calibrated_mv();
             blind_ctx.saadc_vdd_mv = p3_power_diag_vdd_mv();
             blind_ctx.saadc_valid_mask = p3_power_diag_valid_mask();
             blind_ctx.saadc_samples = p3_power_diag_samples();
