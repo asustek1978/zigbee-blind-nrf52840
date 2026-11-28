@@ -37,7 +37,7 @@ class TestV440Diagnostic(unittest.TestCase):
 
     def test_all_zcl_sensor_attributes_and_converter_sync(self):
         self.assertEqual(self.js, self.mjs)
-        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '4', '9'}", self.main)
+        self.assertIn("blind_sw_build_id[] = {7, '4', '2', '.', '0', '-', '5', '0'}", self.main)
         ids = re.findall(r"#define P3_\w+ 0x(F[0-9A-F]{3})U", self.main)
         self.assertEqual(len(ids), len(set(ids)))
         for name, attr in SENSORS.items():
