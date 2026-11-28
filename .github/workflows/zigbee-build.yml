@@ -41,6 +41,7 @@ on:
       - experiment/v42-0-47-bad-stop-gpio-recovery
       - experiment/v42-0-48-gpiote-ppi-timer-start
       - experiment/v42-0-49-goal-silence-exit
+      - experiment/v42-0-50-vddh-calibration
     paths:
       - '.github/workflows/zigbee-build.yml'
       - 'src/**'
@@ -217,6 +218,17 @@ jobs:
       - name: Test v42.0-49 Zigbee2MQTT 41.3/48/49 firmware gate
         run: |
           node app/tests/test_v42_0_49_z2m_compat.mjs
+
+      - name: Test v42.0-50 VDDH calibration policy on host
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -pedantic -Iapp/include \
+            app/tests/test_p3_vddh_calibration.c -o /tmp/test_p3_vddh_calibration
+          /tmp/test_p3_vddh_calibration
+
+      - name: Test v42.0-50 calibrated voltage read-only Zigbee contract
+        run: |
+          PYTHONPATH=app/tools python3 -m unittest discover \
+            -s app/tests -p 'test_v42_0_50_vddh_calibration.py' -v
 
       - name: Initialize Nordic Zigbee R23 v1.4.0 workspace
         run: |
@@ -454,22 +466,36 @@ jobs:
           path: diagnostic/
           if-no-files-found: warn
 
-      - name: Package P3-NRF52840 v42.0-48 UNVERIFIED experimental UF2
+      - name: Package P3-NRF52840 v42.0-50 calibrated VDDH BENCH-UNVERIFIED UF2
         if: success() && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
           mkdir -p release
-          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-49-GOAL-SILENCE-EXIT-BENCH-UNVERIFIED.uf2
+          cp build-nicenano/zephyr/zephyr.uf2 release/P3-NRF52840-v42-0-50-VDDH-CALIBRATION-BENCH-UNVERIFIED.uf2
           cp diagnostic/uf2_report.txt release/UF2_VALIDATION.txt
           cp build-nicenano/zephyr/.config release/zephyr.config
           git -C app rev-parse HEAD > release/SOURCE_COMMIT.txt
           (
             cd release
-            sha256sum P3-NRF52840-v42-0-49-GOAL-SILENCE-EXIT-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
-            test -s P3-NRF52840-v42-0-49-GOAL-SILENCE-EXIT-BENCH-UNVERIFIED.uf2
+            sha256sum P3-NRF52840-v42-0-50-VDDH-CALIBRATION-BENCH-UNVERIFIED.uf2 > SHA256SUMS.txt
+            test -s P3-NRF52840-v42-0-50-VDDH-CALIBRATION-BENCH-UNVERIFIED.uf2
           )
-          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-49-GOAL-SILENCE-EXIT-BENCH-UNVERIFIED.uf2
+          python3 app/tools/check_uf2_layout.py release/P3-NRF52840-v42-0-50-VDDH-CALIBRATION-BENCH-UNVERIFIED.uf2
           cat > release/READ_ME_FIRST.txt <<'EOF'
+          P3-NRF52840 v42.0-50 — ONE-POINT CALIBRATED VDDH BENCH ONLY
+          SOURCE: v42.0-49 motor control, unchanged; new read-only Basic
+          0xF19A SAADC_VDDH_CALIBRATED_MV (mV) for v42.0-50 only.
+          Estimated HW-954 BOARD INPUT = round(raw_VDDH * 3598 / 3505)
+          based on two multimeters at board input vs internal VDDH/5.
+          This is only ONE POINT near 3.6V; physical test required.
+          Do not mistake HW-954 board input for direct battery BAT+:
+          observed 3.687V at BAT+, 3.598V at board input.
+          BASIC 0xF16A raw VDDH remains unmodified.
+          Standard PowerCfg BatteryVoltage remains unknown; DP13
+          percentage and motor commands remain unchanged.
+          Requires matching v50-aware Zigbee2MQTT converter and device SWBuildID.
+          FLASH TEST MOTOR #3 ONLY after CI success; kitchen v41.3 untouched.
+
           P3-NRF52840 v42.0-49 — GOAL+3S SILENCE RX EXIT BENCH
           After a completed accepted DP3 target report, an empty RX ring
           and 3000ms without new UARTE0 RX bytes, return to low-power
@@ -555,11 +581,11 @@ jobs:
           Do not use this build unattended with a curtain attached.
           EOF
 
-      - name: Upload P3-NRF52840 v42.0-48 UNVERIFIED experimental UF2
+      - name: Upload P3-NRF52840 v42.0-50 UNVERIFIED experimental UF2
         if: success() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v6
         with:
-          name: P3-NRF52840-v42-0-49-GOAL-SILENCE-EXIT-BENCH-UNVERIFIED-UF2
+          name: P3-NRF52840-v42-0-50-VDDH-CALIBRATION-BENCH-UNVERIFIED-UF2
           path: release/
           if-no-files-found: error
           retention-days: 30
