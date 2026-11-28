@@ -43,7 +43,7 @@ class TestV42049GoalExit(unittest.TestCase):
         self.assertIn("blind_ctx.session_goal_silence_exits = session_stats.goal_silence_exits;", self.main)
         self.assertIn("session_goal_silence_exits: 0xF199", self.z2m)
         self.assertIn("5=fresh DP3 target + 3s silence", self.z2m)
-        self.assertIn("'4', '2', '.', '0', '-', '4', '9'", self.main)
+        self.assertIn("'4', '2', '.', '0', '-', '5', '0'", self.main)
 
 if __name__ == "__main__":
     unittest.main()
