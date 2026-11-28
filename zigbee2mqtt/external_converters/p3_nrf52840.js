@@ -122,6 +122,8 @@ const diagnosticAttributes = {
     session_watchdog_exits: 0xF197,
     session_watchdog_goal_no_stop: 0xF198,
     session_goal_silence_exits: 0xF199,
+    /* v42.0-50 only: one-point correction, raw VDDH still preserved. */
+    saadc_vddh_calibrated_mv: 0xF19A,
     tuya_frames_ok: 0xF133,
     tuya_frames_rejected: 0xF134,
     stress_rx_bytes: 0xF12C,
@@ -157,6 +159,7 @@ const visibleBenchDiagnostics = [
     'hw_direct_max_timeouts',
     /* SAADC supply diagnostics; VDDH is NOT confirmed as battery voltage. */
     'saadc_vddh_mv',
+    'saadc_vddh_calibrated_mv',
     'saadc_vdd_mv',
     'saadc_valid_mask',
     'saadc_samples',
@@ -239,6 +242,7 @@ const diagnosticDescriptions = {
     hw_direct_session_start_ms: 'Uptime ms when the current/last full hardware RX session actually started; absolute 120 s watchdog anchor',
     hw_direct_motion_lockout: '1=after 120 s watchdog, ignore repeated MCU OPEN/CLOSE until fresh STOP or explicit Zigbee command',
     saadc_vddh_mv: 'Offset-calibrated/16x nRF52840 VDDH rail (mV) via internal SAADC VDDH/5; NOT verified as battery voltage on HW-954',
+    saadc_vddh_calibrated_mv: 'Experimental v42.0-50 HW-954 input-rail estimate (mV), raw VDDH x 3598/3505 from one meter comparison; NOT direct BAT+ or standard BatteryVoltage',
     saadc_vdd_mv: 'Measured nRF52840 VDD supply rail in millivolts (not necessarily battery voltage)',
     saadc_valid_mask: 'SAADC successful readings: bit 0=VDDH; bit 1=VDD; 0=no valid reading',
     saadc_samples: 'Number of SAADC diagnostic sample attempts (every 10 min after initial 30 s)',
@@ -300,9 +304,14 @@ const goalCounterSupported = (device) => {
     const match = /^42\.0-(\d+)$/.exec(device?.softwareBuildID || '');
     return match !== null && Number(match[1]) >= 49;
 };
+const calibrationSupported = (device) => {
+    const match = /^42\.0-(\d+)$/.exec(device?.softwareBuildID || '');
+    return match !== null && Number(match[1]) >= 50;
+};
 const benchDiagnosticsFor = (device) =>
     visibleBenchDiagnostics.filter((name) =>
-        name !== 'session_goal_silence_exits' || goalCounterSupported(device));
+        (name !== 'session_goal_silence_exits' || goalCounterSupported(device)) &&
+        (name !== 'saadc_vddh_calibrated_mv' || calibrationSupported(device)));
 const assertBenchSupported = (entity, meta) => {
     const device = meta?.device ||
         (typeof entity.getDevice === 'function' ? entity.getDevice() : undefined);
@@ -336,7 +345,10 @@ const diagnosticToZigbee = {
         if (key !== 'motor_dp_battery') {
             const device = assertBenchSupported(entity, meta);
             if (key === 'session_goal_silence_exits' && !goalCounterSupported(device)) {
-                throw new Error('P3 goal-silence counter requires SWBuildID 42.0-49');
+                throw new Error('P3 goal-silence counter requires SWBuildID >=42.0-49');
+            }
+            if (key === 'saadc_vddh_calibrated_mv' && !calibrationSupported(device)) {
+                throw new Error('P3 calibrated VDDH requires SWBuildID >=42.0-50');
             }
         }
         await entity.read('genBasic', [diagnosticAttributes[key]]);
@@ -346,8 +358,8 @@ const diagnosticToZigbee = {
 // A single Zigbee2MQTT GET refreshes all firmware diagnostic attributes.
 // Split reads into small ZCL frames to avoid oversized responses; do not send
 // motor commands or reset/modify any diagnostic counters.
-/* Manual refresh of 45 (v48) or 46 (v49) power, RX, session and command fields.
- * This uses 9 or 10 small Zigbee Basic batches; no unsolicited polling.
+/* Manual refresh: 45 fields on v48, 46 on v49, 47 on v50.
+ * Uses 9/10 small Zigbee Basic batches; no unsolicited polling.
  * Not called automatically when an older kitchen v41.3 device joins.
  */
 const refreshBenchDiagnosticsToZigbee = {
@@ -366,7 +378,9 @@ const refreshAllDiagnosticsToZigbee = {
     convertGet: async (entity, key, meta) => {
         const device = assertBenchSupported(entity, meta);
         const attributes = Object.entries(diagnosticAttributes)
-            .filter(([name]) => name !== 'session_goal_silence_exits' || goalCounterSupported(device))
+            .filter(([name]) =>
+                (name !== 'session_goal_silence_exits' || goalCounterSupported(device)) &&
+                (name !== 'saadc_vddh_calibrated_mv' || calibrationSupported(device)))
             .map(([, id]) => id);
         const batchSize = 5;
         for (let i = 0; i < attributes.length; i += batchSize) {
@@ -384,7 +398,7 @@ export default {
     zigbeeModel: ['P3-NRF52840'],
     model: 'P3-NRF52840',
     vendor: 'LocalDIY',
-    description: 'P3 nRF52840 v41.3-compatible / v42.0-49 goal-silence exit bench; battery path unverified',
+    description: 'P3 nRF52840 v41.3-compatible / v42.0-50 calibrated-VDDH bench; battery path unverified',
     fromZigbee: [fz.cover_position_tilt, fz.battery, diagnosticFromZigbee],
     toZigbee: [tz.cover_state, tz.cover_position_tilt, diagnosticToZigbee, refreshBenchDiagnosticsToZigbee, refreshAllDiagnosticsToZigbee, batteryToZigbee],
     /* Device-scoped exposures: 41.3 gets cover+battery only; v42.0-48+
@@ -394,16 +408,18 @@ export default {
         e.cover_position(), e.battery(),
         ...(benchSupported(device) ? [
             e.numeric('refresh_bench_diagnostics', ea.STATE_GET).withDescription(
-                goalCounterSupported(device)
-                    ? 'Manually read 46 power/UART/PPI/session/command counters in 10 Zigbee batches; no motor command'
-                    : 'Manually read 45 power/UART/PPI/session/command counters in 9 Zigbee batches; no motor command'
+                calibrationSupported(device)
+                    ? 'Manually read 47 power/UART/PPI/session/command fields in 10 Zigbee batches; calibrated VDDH estimate, no motor command'
+                    : goalCounterSupported(device)
+                        ? 'Manually read 46 power/UART/PPI/session/command counters in 10 Zigbee batches; no motor command'
+                        : 'Manually read 45 power/UART/PPI/session/command counters in 9 Zigbee batches; no motor command'
             ),
             ...benchDiagnosticsFor(device).map((name) => {
                 const expose = e.numeric(name, ea.STATE_GET).withDescription(
                     diagnosticDescriptions[name] ||
                         'Read-only diagnostic from Zigbee Basic cluster'
                 );
-                return (name === 'saadc_vddh_mv' || name === 'saadc_vdd_mv')
+                return (name === 'saadc_vddh_mv' || name === 'saadc_vddh_calibrated_mv' || name === 'saadc_vdd_mv')
                     ? expose.withUnit('mV') : expose;
             }),
         ] : []),
