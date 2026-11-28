@@ -28,11 +28,18 @@ assert.equal(goalSupported({softwareBuildID: '42.0-48'}), false);
 assert.equal(goalSupported({softwareBuildID: '42.0-49'}), true);
 assert.equal(goalSupported({softwareBuildID: '42.0-50'}), true);
 
+const calibrationSource = js.match(/const calibrationSupported = \(device\) => \{[\s\S]*?\n\};/);
+assert.ok(calibrationSource, 'v50 calibration version gate must exist');
+const calibrationSupported = vm.runInNewContext(calibrationSource[0] + '\ncalibrationSupported;', {});
+assert.equal(calibrationSupported({softwareBuildID: '41.3'}), false);
+assert.equal(calibrationSupported({softwareBuildID: '42.0-49'}), false);
+assert.equal(calibrationSupported({softwareBuildID: '42.0-50'}), true);
+
 const fieldsSource = js.match(/const visibleBenchDiagnostics = \[[\s\S]*?\n\];/);
 const selectionSource = js.match(/const benchDiagnosticsFor = \(device\) =>[\s\S]*?;\n/);
 assert.ok(fieldsSource && selectionSource);
 const fieldSelection = vm.runInNewContext(
-    [fieldsSource[0], goalSource[0], selectionSource[0], 'benchDiagnosticsFor;'].join('\n'), {});
+    [fieldsSource[0], goalSource[0], calibrationSource[0], selectionSource[0], 'benchDiagnosticsFor;'].join('\n'), {});
 assert.equal(fieldSelection({softwareBuildID: '42.0-48'}).length, 45);
 assert.equal(fieldSelection({softwareBuildID: '42.0-49'}).length, 46);
 assert.equal(fieldSelection({softwareBuildID: '42.0-50'}).length, 47);
