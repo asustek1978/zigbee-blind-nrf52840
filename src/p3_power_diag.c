@@ -10,6 +10,7 @@
 #include <zephyr/sys/atomic.h>
 
 #include "p3_power_diag.h"
+#include "p3_vddh_calibration.h"
 #include "p3_soft_uart.h"
 
 #define P3_SAADC_NODE DT_PATH(zephyr_user)
@@ -97,6 +98,14 @@ K_THREAD_DEFINE(p3_power_diag_tid, 1280, p3_power_diag_thread,
                 NULL, NULL, NULL, K_PRIO_PREEMPT(10), 0, 30000);
 
 uint32_t p3_power_diag_vddh_mv(void) { return (uint32_t)atomic_get(&rail_vddh_mv); }
+/* Software-only scaling of the existing VDDH measurement. Zero when the
+ * most recent sample failed. Sampling cadence and RX ownership untouched.
+ */
+uint32_t p3_power_diag_vddh_calibrated_mv(void)
+{
+    if ((p3_power_diag_valid_mask() & 1U) == 0U) return 0U;
+    return p3_vddh_input_estimate_mv(p3_power_diag_vddh_mv());
+}
 uint32_t p3_power_diag_vdd_mv(void) { return (uint32_t)atomic_get(&rail_vdd_mv); }
 uint32_t p3_power_diag_valid_mask(void) { return (uint32_t)atomic_get(&rail_valid_mask); }
 uint32_t p3_power_diag_samples(void) { return (uint32_t)atomic_get(&rail_samples); }
