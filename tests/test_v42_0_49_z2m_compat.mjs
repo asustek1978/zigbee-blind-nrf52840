@@ -35,8 +35,11 @@ const fieldSelection = vm.runInNewContext(
     [fieldsSource[0], goalSource[0], selectionSource[0], 'benchDiagnosticsFor;'].join('\n'), {});
 assert.equal(fieldSelection({softwareBuildID: '42.0-48'}).length, 45);
 assert.equal(fieldSelection({softwareBuildID: '42.0-49'}).length, 46);
+assert.equal(fieldSelection({softwareBuildID: '42.0-50'}).length, 47);
 assert.ok(!fieldSelection({softwareBuildID: '42.0-48'}).includes('session_goal_silence_exits'));
 assert.ok(fieldSelection({softwareBuildID: '42.0-49'}).includes('session_goal_silence_exits'));
+assert.ok(!fieldSelection({softwareBuildID: '42.0-49'}).includes('saadc_vddh_calibrated_mv'));
+assert.ok(fieldSelection({softwareBuildID: '42.0-50'}).includes('saadc_vddh_calibrated_mv'));
 for (const version of ['42.0-48', '42.0-49']) {
     const fields = fieldSelection({softwareBuildID: version});
     for (const field of [
@@ -58,6 +61,9 @@ assert.match(js, /assertBenchSupported\(entity, meta\);/);
 assert.match(js, /key: \['refresh_bench_diagnostics'\]/);
 assert.match(js, /session_goal_silence_exits: 0xF199/);
 assert.match(js, /session_stop_guard_exits: 0xF196/);
+assert.match(js, /saadc_vddh_calibrated_mv: 0xF19A/);
+assert.match(js, /Manually read 47 power\/UART\/PPI\/session\/command fields in 10 Zigbee batches/);
+assert.match(js, /calibrationSupported\(device\)/);
 assert.match(js, /Manually read 46 power\/UART\/PPI\/session\/command counters in 10 Zigbee batches/);
 assert.match(js, /Manually read 45 power\/UART\/PPI\/session\/command counters in 9 Zigbee batches/);
 console.log('Z2M SWBuildID gate and converter mirrors: PASS');
